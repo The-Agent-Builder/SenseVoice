@@ -70,9 +70,12 @@ class StreamingASRHandler:
             )
             
             if res and len(res) > 0:
-                text = res[0].get("text", "")
-                if text:
-                    return self._create_success_result(text, "streaming", confidence=0.9)
+                # 解析结果
+                result_data = res[0] if isinstance(res, list) else res
+                text = result_data.get("text", "") if isinstance(result_data, dict) else str(result_data)
+                
+                if text and text.strip():
+                    return self._create_success_result(text.strip(), "streaming", confidence=0.9)
             
             return self._create_empty_result()
             
@@ -87,7 +90,7 @@ class StreamingASRHandler:
             if sense_voice_model is None:
                 return self._create_error_result("基础模型不可用")
             
-            # 使用SenseVoiceSmall进行识别
+            # 使用SenseVoice模型进行识别
             res = sense_voice_model.inference(
                 data_in=[audio_tensor],
                 language=language,

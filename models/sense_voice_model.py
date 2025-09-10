@@ -5,8 +5,8 @@ import logging
 from typing import Optional, Tuple, Any, Dict
 import torch
 
-from model import SenseVoiceSmall
 from funasr import AutoModel
+from .model import SenseVoiceSmall
 from config.settings import get_settings
 
 logger = logging.getLogger(__name__)
@@ -40,10 +40,10 @@ class SenseVoiceModelManager:
                 self.streaming_model = AutoModel(
                     model=self.settings.model_dir,
                     trust_remote_code=True,
-                    remote_code="./model.py",
                     vad_model="fsmn-vad",
                     vad_kwargs={"max_single_segment_time": 30000},
                     device=self.settings.device,
+                    disable_update=True  # 禁用自动更新检查
                 )
                 logger.info("流式模型加载成功")
             except Exception as e:
