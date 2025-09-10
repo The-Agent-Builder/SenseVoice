@@ -58,6 +58,8 @@ class WebSocketStreamingHandler:
                 await self._handle_ping_message(client_id, message)
             elif message_type == "clear":
                 await self._handle_clear_message(client_id, message)
+            elif message_type == "end_segment":
+                await self._handle_end_segment_message(client_id, message)
             else:
                 await self._send_error_message(client_id, f"未知的消息类型: {message_type}")
                 
@@ -112,7 +114,7 @@ class WebSocketStreamingHandler:
                 await self._send_error_message(client_id, "音频数据为空")
                 return
             
-            logger.info(f"客户端 {client_id} 发送Opus音频数据，长度: {len(audio_data)}")
+            logger.info(f"客户端 {client_id} 发送音频数据，长度: {len(audio_data)}")
             
             # 获取连接信息
             connection_info = self.connection_manager.get_connection_info(client_id)
@@ -123,13 +125,27 @@ class WebSocketStreamingHandler:
             config = connection_info["config"]
             audio_buffer = connection_info["audio_buffer"]
             
-            # 解码音频数据（固定Opus格式）
+            # 根据音频格式解码音频数据
+            audio_format = message.get("format", "opus")  # 默认为opus
             encoding = config.get("encoding", "base64")
-            audio_array = self.audio_processor.decode_audio_data(audio_data, encoding)
-            
-            if audio_array is None:
-                await self._send_error_message(client_id, "Opus音频解码失败")
-                return
+
+            logger.info(f"音频格式: {audio_format}, 编码: {encoding}")
+            logger.info(f"消息内容: {list(message.keys())}")  # 调试信息
+
+            if audio_format == "pcm":
+                # 直接解码PCM格式
+                logger.info("使用PCM解码器")
+                audio_array = self.audio_processor.decode_pcm_data(audio_data, encoding)
+                if audio_array is None:
+                    await self._send_error_message(client_id, "PCM音频解码失败")
+                    return
+            else:
+                # 解码Opus格式
+                logger.info(f"使用Opus解码器 (格式: {audio_format})")
+                audio_array = self.audio_processor.decode_audio_data(audio_data, encoding)
+                if audio_array is None:
+                    await self._send_error_message(client_id, "Opus音频解码失败")
+                    return
             
             logger.info(f"音频解码成功，样本数: {len(audio_array)}")
             
@@ -156,27 +172,34 @@ class WebSocketStreamingHandler:
         try:
             chunk_duration = config.get("chunk_duration", self.settings.default_chunk_duration)
             language = config.get("language", "auto")
-            
-            # 获取音频块
-            audio_chunk = audio_buffer.get_audio_chunk(chunk_duration)
-            
+
+            # 获取累积音频用于流式识别（而不是固定时长的音频块）
+            audio_chunk = audio_buffer.get_streaming_audio(max_duration=10.0)  # 最多10秒的累积音频
+
             if len(audio_chunk) == 0:
                 return
-            
-            # 进行ASR处理
+
+            # 在实时流式中，大部分时候都是中间结果，只在特定条件下设置is_final
+            # 1. 检测到长时间静音
+            # 2. 用户主动发送结束信号
+            # 3. 连接即将关闭
+            is_final = False  # 默认为中间结果
+
+            # 进行ASR处理 - 使用累积音频实现真正的流式识别
             result = await self.asr_handler.process_audio_chunk(
-                audio_chunk, 
+                audio_chunk,
                 language=language,
-                merge_length_s=chunk_duration
+                merge_length_s=chunk_duration,
+                is_final=is_final
             )
-            
-            # 发送结果
+
+            # 发送结果（包括空文本的中间结果）
             response = {
                 "type": "result",
                 "timestamp": asyncio.get_event_loop().time(),
                 **result
             }
-            
+
             await self.connection_manager.send_message(client_id, response)
             self.connection_manager.increment_stat(client_id, "audio_chunks_processed")
             
@@ -198,13 +221,63 @@ class WebSocketStreamingHandler:
         audio_buffer = self.connection_manager.get_audio_buffer(client_id)
         if audio_buffer:
             audio_buffer.clear()
+
+            # 重置ASR处理器的流式状态
+            if hasattr(self.asr_handler, 'reset_streaming_state'):
+                self.asr_handler.reset_streaming_state()
+
             await self.connection_manager.send_message(client_id, {
                 "type": "cleared",
                 "status": "success",
-                "message": "音频缓冲区已清空"
+                "message": "音频缓冲区和流式状态已清空"
             })
         else:
             await self._send_error_message(client_id, "无法清空缓冲区")
+
+    async def _handle_end_segment_message(self, client_id: str, message: Dict[str, Any]):
+        """处理结束段落消息 - 强制输出最终结果"""
+        audio_buffer = self.connection_manager.get_audio_buffer(client_id)
+        if audio_buffer and audio_buffer.get_duration() > 0:
+            # 获取配置
+            connection_info = self.connection_manager.get_connection_info(client_id)
+            config = connection_info["config"] if connection_info else {}
+
+            chunk_duration = config.get("chunk_duration", self.settings.default_chunk_duration)
+            language = config.get("language", "auto")
+
+            # 获取剩余的音频
+            audio_chunk = audio_buffer.get_all_audio()
+
+            if len(audio_chunk) > 0:
+                # 强制设置为最终结果
+                result = await self.asr_handler.process_audio_chunk(
+                    audio_chunk,
+                    language=language,
+                    merge_length_s=chunk_duration,
+                    is_final=True  # 强制最终结果
+                )
+
+                # 发送最终结果
+                response = {
+                    "type": "result",
+                    "timestamp": asyncio.get_event_loop().time(),
+                    **result
+                }
+
+                await self.connection_manager.send_message(client_id, response)
+
+                # 清空缓冲区，但保持流式状态用于累积识别
+                audio_buffer.clear()
+                if hasattr(self.asr_handler, 'reset_segment_state'):
+                    self.asr_handler.reset_segment_state()  # 使用段落重置而不是完全重置
+
+            await self.connection_manager.send_message(client_id, {
+                "type": "segment_ended",
+                "status": "success",
+                "message": "语音段落已结束"
+            })
+        else:
+            await self._send_error_message(client_id, "没有音频数据需要处理")
     
     async def _send_error_message(self, client_id: str, error_message: str):
         """发送错误消息"""

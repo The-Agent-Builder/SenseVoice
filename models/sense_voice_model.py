@@ -34,21 +34,33 @@ class SenseVoiceModelManager:
             self.sense_voice_model.eval()
             logger.info("SenseVoice模型加载成功")
             
-            # 初始化AutoModel（用于流式处理）
+            # 初始化真正的流式ASR模型
             try:
-                logger.info("正在加载流式模型...")
+                logger.info("正在加载Paraformer流式模型...")
                 self.streaming_model = AutoModel(
-                    model=self.settings.model_dir,
-                    trust_remote_code=True,
-                    vad_model="fsmn-vad",
-                    vad_kwargs={"max_single_segment_time": 30000},
+                    model="paraformer-zh-streaming",
+                    model_revision="v2.0.4",
                     device=self.settings.device,
                     disable_update=True  # 禁用自动更新检查
                 )
-                logger.info("流式模型加载成功")
+                logger.info("Paraformer流式模型加载成功")
             except Exception as e:
                 logger.warning(f"流式模型加载失败，将仅使用基础模型: {e}")
                 self.streaming_model = None
+
+            # 初始化VAD模型用于端点检测
+            try:
+                logger.info("正在加载VAD模型...")
+                self.vad_model = AutoModel(
+                    model="fsmn-vad",
+                    model_revision="v2.0.4",
+                    device=self.settings.device,
+                    disable_update=True
+                )
+                logger.info("VAD模型加载成功")
+            except Exception as e:
+                logger.warning(f"VAD模型加载失败: {e}")
+                self.vad_model = None
             
             self._initialized = True
             return True
@@ -73,9 +85,19 @@ class SenseVoiceModelManager:
             raise RuntimeError("模型未初始化，请先调用initialize()")
         return self.streaming_model
     
+    def get_vad_model(self) -> Optional[AutoModel]:
+        """获取VAD模型"""
+        if not self._initialized:
+            raise RuntimeError("模型未初始化，请先调用initialize()")
+        return self.vad_model
+
     def has_streaming_model(self) -> bool:
         """检查是否有可用的流式模型"""
         return self._initialized and self.streaming_model is not None
+
+    def has_vad_model(self) -> bool:
+        """检查是否有可用的VAD模型"""
+        return self._initialized and self.vad_model is not None
 
 
 # 全局模型管理器实例

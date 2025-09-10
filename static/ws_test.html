@@ -179,6 +179,110 @@
             border-radius: 5px;
             margin: 10px 0;
         }
+
+        /* 流式识别结果样式 */
+        .current-result {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 10px 0;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+
+        .current-text {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 8px;
+            min-height: 25px;
+        }
+
+        .current-status {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .streaming-display {
+            border: 2px solid #e9ecef;
+            border-radius: 10px;
+            background: white;
+            overflow: hidden;
+        }
+
+        .streaming-text {
+            min-height: 120px;
+            max-height: 200px;
+            overflow-y: auto;
+            padding: 20px;
+            font-size: 16px;
+            line-height: 1.6;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .streaming-text .placeholder {
+            color: #6c757d;
+            font-style: italic;
+        }
+
+        .streaming-text .partial {
+            color: #007bff;
+            background: rgba(0, 123, 255, 0.1);
+            padding: 2px 4px;
+            border-radius: 3px;
+            margin-right: 5px;
+            animation: pulse 1.5s infinite;
+        }
+
+        .streaming-text .final {
+            color: #28a745;
+            background: rgba(40, 167, 69, 0.1);
+            padding: 2px 4px;
+            border-radius: 3px;
+            margin-right: 5px;
+        }
+
+        .streaming-text .segment {
+            display: inline-block;
+            margin: 2px 0;
+        }
+
+        .streaming-controls {
+            padding: 15px 20px;
+            background: white;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.6; }
+            100% { opacity: 1; }
+        }
+
+        /* 状态指示器 */
+        .status-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        .status-indicator.listening {
+            background: #28a745;
+            animation: pulse 1s infinite;
+        }
+
+        .status-indicator.processing {
+            background: #007bff;
+            animation: pulse 0.8s infinite;
+        }
+
+        .status-indicator.idle {
+            background: #6c757d;
+        }
     </style>
 </head>
 <body>
@@ -261,17 +365,50 @@
             </div>
         </div>
 
-        <!-- 识别结果 -->
+        <!-- 流式识别结果 -->
         <div class="section">
-            <h3>识别结果</h3>
-            <div id="result" class="result">等待识别结果...</div>
-            
+            <h3>🎯 流式识别结果</h3>
+
+            <!-- 当前识别状态 -->
+            <div style="margin-bottom: 20px;">
+                <h4>当前识别状态</h4>
+                <div id="currentResult" class="current-result">
+                    <div class="current-text">等待语音输入...</div>
+                    <div class="current-status">状态: 等待中</div>
+                </div>
+            </div>
+
+            <!-- 流式文本显示 -->
+            <div style="margin-bottom: 20px;">
+                <h4>实时流式文本</h4>
+                <div class="streaming-display">
+                    <div id="streamingText" class="streaming-text">
+                        <span class="placeholder">开始录音或上传文件后，这里将显示实时识别的文本...</span>
+                    </div>
+                    <div class="streaming-controls">
+                        <button id="clearStreamBtn" class="btn-secondary">清空流式文本</button>
+                        <button id="copyStreamBtn" class="btn-primary">复制当前文本</button>
+                    </div>
+                    <!-- 调试信息 -->
+                    <div id="debugInfo" style="background: #f0f0f0; padding: 10px; margin-top: 10px; font-size: 12px; border-radius: 5px;">
+                        <strong>调试信息:</strong> <span id="debugText">等待数据...</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 详细识别信息 -->
+            <div style="margin-bottom: 20px;">
+                <h4>详细识别信息</h4>
+                <div id="result" class="result">等待识别结果...</div>
+            </div>
+
             <!-- 完整文本历史 -->
-            <div style="margin-top: 20px;">
-                <h4>完整识别文本</h4>
+            <div>
+                <h4>完整识别历史</h4>
                 <div class="controls">
-                    <button id="clearTextBtn" class="btn-secondary">清空文本</button>
-                    <button id="copyTextBtn" class="btn-primary">复制文本</button>
+                    <button id="clearTextBtn" class="btn-secondary">清空历史</button>
+                    <button id="copyTextBtn" class="btn-primary">复制全部</button>
+                    <button id="exportTextBtn" class="btn-success">导出文本</button>
                 </div>
                 <div id="fullText" class="full-text">识别的文本将在这里累积显示...</div>
             </div>
@@ -350,10 +487,17 @@
                     resumeFileBtn: document.getElementById('resumeFileBtn'),
                     stopFileBtn: document.getElementById('stopFileBtn'),
                     fileStatus: document.getElementById('fileStatus'),
+                    // 新的流式显示元素
+                    currentResult: document.getElementById('currentResult'),
+                    streamingText: document.getElementById('streamingText'),
+                    clearStreamBtn: document.getElementById('clearStreamBtn'),
+                    copyStreamBtn: document.getElementById('copyStreamBtn'),
+                    // 原有元素
                     result: document.getElementById('result'),
                     fullText: document.getElementById('fullText'),
                     clearTextBtn: document.getElementById('clearTextBtn'),
                     copyTextBtn: document.getElementById('copyTextBtn'),
+                    exportTextBtn: document.getElementById('exportTextBtn'),
                     log: document.getElementById('log'),
                     messageCount: document.getElementById('messageCount'),
                     resultCount: document.getElementById('resultCount'),
@@ -365,6 +509,11 @@
                 // 初始化完整文本存储
                 this.fullTextContent = '';
                 this.selectedFile = null;
+
+                // 初始化流式文本管理
+                this.currentStreamingText = '';
+                this.streamingSegments = [];
+                this.currentSegment = null;
                 
                 // 文件处理控制变量
                 this.fileProcessing = {
@@ -393,6 +542,9 @@
                 this.elements.stopFileBtn.addEventListener('click', () => this.stopFileProcessing());
                 this.elements.clearTextBtn.addEventListener('click', () => this.clearFullText());
                 this.elements.copyTextBtn.addEventListener('click', () => this.copyFullText());
+                this.elements.exportTextBtn.addEventListener('click', () => this.exportText());
+                this.elements.clearStreamBtn.addEventListener('click', () => this.clearStreamingText());
+                this.elements.copyStreamBtn.addEventListener('click', () => this.copyStreamingText());
             }
 
             setupAudioVisualizer() {
@@ -492,8 +644,19 @@
             }
 
             handleResult(message) {
+                // 添加详细调试信息
+                console.log('handleResult 收到消息:', {
+                    text: message.text,
+                    is_final: message.is_final,
+                    status: message.status,
+                    hasText: !!(message.text && message.text.trim())
+                });
+
                 if (message.text && message.text.trim()) {
-                    // 显示当前识别结果
+                    // 更新流式显示
+                    this.updateStreamingDisplay(message);
+
+                    // 显示详细识别结果
                     this.elements.result.innerHTML = `
                         <div><strong>识别文本:</strong> ${message.text}</div>
                         <div><strong>原始文本:</strong> ${message.raw_text || 'N/A'}</div>
@@ -502,8 +665,8 @@
                         <div><strong>模型类型:</strong> ${message.model_type || 'N/A'}</div>
                         <div><strong>状态:</strong> ${message.is_final ? '最终结果' : '中间结果'}</div>
                     `;
-                    
-                    // 添加到完整文本中（只添加最终结果）
+
+                    // 添加到完整文本历史中（只添加最终结果）
                     if (message.is_final) {
                         const timestamp = new Date().toLocaleTimeString();
                         const textToAdd = `[${timestamp}] ${message.text}\n`;
@@ -512,11 +675,126 @@
                         // 自动滚动到底部
                         this.elements.fullText.scrollTop = this.elements.fullText.scrollHeight;
                     }
-                    
+
                     this.stats.resultCount++;
                 } else {
                     this.elements.result.innerHTML = '等待识别结果...';
                 }
+            }
+
+            updateStreamingDisplay(message) {
+                const text = message.text.trim();
+                const isPartial = !message.is_final;
+
+                // 调试信息
+                console.log('updateStreamingDisplay:', {
+                    text: text,
+                    isPartial: isPartial,
+                    is_final: message.is_final,
+                    currentSegment: this.currentSegment,
+                    streamingSegments: this.streamingSegments.length
+                });
+
+                // 更新当前识别状态
+                const statusIndicator = isPartial ?
+                    '<span class="status-indicator processing"></span>' :
+                    '<span class="status-indicator listening"></span>';
+
+                this.elements.currentResult.innerHTML = `
+                    <div class="current-text">${statusIndicator}${text}</div>
+                    <div class="current-status">状态: ${isPartial ? '识别中...' : '段落完成'} | 模型: ${message.model_type || 'N/A'}</div>
+                `;
+
+                // 真正的流式ASR实现：累积显示
+                if (isPartial) {
+                    // 中间结果：累积到当前流式文本中
+                    this.currentStreamingText = this.getConfirmedText() + text;
+                    console.log('累积中间结果:', this.currentStreamingText);
+                } else {
+                    // 最终结果：确认这段文本，添加到已确认段落
+                    this.streamingSegments.push({
+                        text: text,
+                        isPartial: false,
+                        timestamp: Date.now()
+                    });
+                    this.currentStreamingText = this.getConfirmedText(); // 重置为已确认的文本
+                    console.log('确认最终结果:', text);
+                }
+
+                // 立即更新流式文本显示
+                this.renderStreamingTextCumulative();
+
+                // 最终状态检查
+                console.log('updateStreamingDisplay 完成后状态:', {
+                    currentStreamingText: this.currentStreamingText,
+                    streamingSegments: this.streamingSegments.length,
+                    isPartial: isPartial
+                });
+            }
+
+            getConfirmedText() {
+                // 获取所有已确认的文本
+                return this.streamingSegments.map(segment => segment.text).join(' ');
+            }
+
+            renderStreamingTextCumulative() {
+                let html = '';
+
+                console.log('renderStreamingTextCumulative 开始:', {
+                    streamingSegments: this.streamingSegments.length,
+                    currentStreamingText: this.currentStreamingText
+                });
+
+                if (this.currentStreamingText && this.currentStreamingText.trim()) {
+                    // 分离已确认的文本和当前正在识别的文本
+                    const confirmedText = this.getConfirmedText();
+                    const currentText = this.currentStreamingText;
+
+                    if (confirmedText) {
+                        // 显示已确认的文本（绿色）
+                        html += `<span class="segment final">${confirmedText}</span>`;
+
+                        // 如果当前文本比已确认文本长，显示新增的部分（蓝色）
+                        if (currentText.length > confirmedText.length) {
+                            const newPart = currentText.substring(confirmedText.length).trim();
+                            if (newPart) {
+                                html += ` <span class="segment partial">${newPart}</span>`;
+                            }
+                        }
+                    } else {
+                        // 全部都是新的识别文本（蓝色）
+                        html += `<span class="segment partial">${currentText}</span>`;
+                    }
+                } else if (this.streamingSegments.length > 0) {
+                    // 只有已确认的文本
+                    html = `<span class="segment final">${this.getConfirmedText()}</span>`;
+                }
+
+                // 如果没有任何内容，显示占位符
+                if (!html.trim()) {
+                    html = '<span class="placeholder">开始录音或上传文件后，这里将显示实时识别的文本...</span>';
+                }
+
+                console.log('最终HTML:', html);
+                this.elements.streamingText.innerHTML = html;
+
+                // 更新调试信息
+                const debugText = document.getElementById('debugText');
+                if (debugText) {
+                    debugText.innerHTML = `
+                        已确认段落: ${this.streamingSegments.length} |
+                        当前流式文本: "${this.currentStreamingText}" |
+                        HTML长度: ${html.length}
+                    `;
+                }
+
+                // 自动滚动到底部
+                this.elements.streamingText.scrollTop = this.elements.streamingText.scrollHeight;
+            }
+
+            // 保留旧方法以防其他地方调用
+            renderStreamingText() {
+                this.renderStreamingTextCumulative();
             }
 
             sendMessage(message) {
@@ -550,7 +828,7 @@
                 try {
                     this.stream = await navigator.mediaDevices.getUserMedia({
                         audio: {
-                            sampleRate: 48000, // Opus最佳采样率
+                            sampleRate: 16000, // 匹配后端模型采样率
                             channelCount: 1,
                             echoCancellation: true,
                             noiseSuppression: true
@@ -599,7 +877,7 @@
                                 }
                             }, 50);
                         }
-                    }, 2000);
+                    }, 600); // 600ms间隔，与Python测试保持一致
 
                     this.isRecording = true;
                     this.elements.startRecordBtn.disabled = true;
@@ -755,16 +1033,16 @@
                 
                 // 转换为目标采样率（如果需要）
                 let processedBuffer = audioBuffer;
-                if (audioBuffer.sampleRate !== 48000) {
-                    processedBuffer = await this.resampleAudioBuffer(audioBuffer, 48000, audioContext);
+                if (audioBuffer.sampleRate !== 16000) {
+                    processedBuffer = await this.resampleAudioBuffer(audioBuffer, 16000, audioContext);
                 }
                 
                 // 转换为单声道
                 const monoData = this.convertToMono(processedBuffer);
                 
-                // 计算分块参数
-                const chunkDuration = 2.0; // 2秒chunks
-                const samplesPerChunk = Math.floor(48000 * chunkDuration);
+                // 计算分块参数 - 与Python测试保持一致
+                const chunkDuration = 0.6; // 600ms chunks (与Python测试一致)
+                const samplesPerChunk = Math.floor(16000 * chunkDuration); // 9600 samples
                 const totalChunks = Math.ceil(monoData.length / samplesPerChunk);
                 
                 // 保存处理参数
@@ -804,7 +1082,7 @@
                     this.elements.fileStatus.textContent = `处理进度: ${progress}% (${i + 1}/${totalChunks})`;
                     
                     // 将音频块转换为Opus格式并发送
-                    await this.sendAudioChunk(chunk, 48000);
+                    await this.sendAudioChunk(chunk, 16000);
                     
                     // 短暂延迟，避免发送过快
                     await new Promise(resolve => setTimeout(resolve, 100));
@@ -910,16 +1188,16 @@
                     
                     // 转换为目标采样率（如果需要）
                     let processedBuffer = audioBuffer;
-                    if (audioBuffer.sampleRate !== 48000) {
-                        processedBuffer = await this.resampleAudioBuffer(audioBuffer, 48000, audioContext);
+                    if (audioBuffer.sampleRate !== 16000) {
+                        processedBuffer = await this.resampleAudioBuffer(audioBuffer, 16000, audioContext);
                     }
                     
                     // 转换为单声道
                     const monoData = this.convertToMono(processedBuffer);
                     
-                    // 分块发送音频数据
-                    const chunkDuration = 2.0; // 2秒chunks
-                    const samplesPerChunk = Math.floor(48000 * chunkDuration);
+                    // 分块发送音频数据 - 与Python测试保持一致
+                    const chunkDuration = 0.6; // 600ms chunks (与Python测试一致)
+                    const samplesPerChunk = Math.floor(16000 * chunkDuration); // 9600 samples
                     const totalChunks = Math.ceil(monoData.length / samplesPerChunk);
                     
                     this.log(`开始发送 ${totalChunks} 个音频块...`);
@@ -934,7 +1212,7 @@
                         this.elements.fileStatus.textContent = `处理进度: ${progress}% (${i + 1}/${totalChunks})`;
                         
                         // 将音频块转换为Opus格式并发送
-                        await this.sendAudioChunk(chunk, 48000);
+                        await this.sendAudioChunk(chunk, 16000);
                         
                         // 短暂延迟，避免发送过快
                         await new Promise(resolve => setTimeout(resolve, 100));
@@ -946,6 +1224,37 @@
                 } catch (error) {
                     throw new Error(`音频流处理失败: ${error.message}`);
                 }
+            }
+
+            async resampleAudioBuffer(audioBuffer, targetSampleRate, audioContext) {
+                // 如果采样率已经匹配，直接返回
+                if (audioBuffer.sampleRate === targetSampleRate) {
+                    return audioBuffer;
+                }
+
+                // 创建离线音频上下文进行重采样
+                const offlineContext = new OfflineAudioContext(
+                    audioBuffer.numberOfChannels,
+                    Math.ceil(audioBuffer.length * targetSampleRate / audioBuffer.sampleRate),
+                    targetSampleRate
+                );
+
+                // 创建音频源
+                const source = offlineContext.createBufferSource();
+                source.buffer = audioBuffer;
+
+                // 连接到输出
+                source.connect(offlineContext.destination);
+
+                // 开始播放
+                source.start(0);
+
+                // 渲染音频
+                const resampledBuffer = await offlineContext.startRendering();
+
+                this.log(`音频重采样: ${audioBuffer.sampleRate}Hz → ${targetSampleRate}Hz`);
+
+                return resampledBuffer;
             }
 
             convertToMono(audioBuffer) {
@@ -1209,6 +1518,54 @@
                     } catch (fallbackError) {
                         this.log('复制功能不可用');
                     }
+                }
+            }
+
+            exportText() {
+                if (this.fullTextContent.trim()) {
+                    const blob = new Blob([this.fullTextContent], { type: 'text/plain;charset=utf-8' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `语音识别结果_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.txt`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                    this.log('文本已导出为文件');
+                } else {
+                    this.log('没有文本可导出');
+                }
+            }
+
+            clearStreamingText() {
+                this.currentStreamingText = '';
+                this.streamingSegments = [];
+                this.currentSegment = null;
+                this.renderStreamingTextCumulative();
+
+                // 重置当前状态显示
+                this.elements.currentResult.innerHTML = `
+                    <div class="current-text"><span class="status-indicator idle"></span>等待语音输入...</div>
+                    <div class="current-status">状态: 等待中</div>
+                `;
+
+                this.log('流式文本已清空');
+            }
+
+            copyStreamingText() {
+                // 使用当前累积的流式文本
+                let streamText = this.currentStreamingText || this.getConfirmedText();
+                streamText = streamText.trim();
+
+                if (streamText) {
+                    navigator.clipboard.writeText(streamText).then(() => {
+                        this.log('当前流式文本已复制到剪贴板');
+                    }).catch(err => {
+                        this.log(`复制失败: ${err.message}`);
+                    });
+                } else {
+                    this.log('没有流式文本可复制');
                 }
             }
         }
