@@ -1,9 +1,7 @@
 # SenseVoice API Docker 镜像
-# 支持 GPU (CUDA) 和 CPU 环境
+# 默认CPU版本，通过构建参数支持GPU
 
-# 使用官方 Python 基础镜像
-ARG BASE_IMAGE=python:3.11-slim
-FROM ${BASE_IMAGE}
+FROM python:3.11-slim
 
 # 设置工作目录
 WORKDIR /app
@@ -34,7 +32,8 @@ ARG PYTORCH_INDEX_URL="https://download.pytorch.org/whl/cpu"
 ARG INSTALL_GPU="false"
 
 RUN if [ "$INSTALL_GPU" = "true" ]; then \
-    pip install torch torchvision torchaudio --index-url ${PYTORCH_INDEX_URL}; \
+        echo "安装GPU版本PyTorch..." && \
+        pip install torch torchvision torchaudio --index-url ${PYTORCH_INDEX_URL}; \
     fi && \
     pip install --no-cache-dir -r requirements.txt
 

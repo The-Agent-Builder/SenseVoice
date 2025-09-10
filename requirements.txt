@@ -9,14 +9,22 @@ python-dotenv
 numpy<=2.3.3
 
 # 机器学习框架
-# CPU版本（开发/测试）
-torch>=2.0.0; platform_machine!="x86_64" or sys_platform=="darwin"
-torchaudio>=2.0.0; platform_machine!="x86_64" or sys_platform=="darwin"
+# 注意：请根据你的环境选择合适的PyTorch版本
 
-# GPU版本（生产环境），通过环境变量控制
-# 使用时请根据CUDA版本选择合适的index-url
+# CPU版本（默认安装）
+torch>=2.0.0
+torchaudio>=2.0.0
+
+# GPU版本安装说明：
+# 在安装requirements.txt之前，请先单独安装GPU版本的PyTorch：
+# 
+# CUDA 11.8:
 # pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+#
+# CUDA 12.1:  
 # pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+#
+# 然后再运行: pip install -r requirements.txt
 
 # 音频处理
 pydub>=0.25.1

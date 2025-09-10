@@ -186,39 +186,42 @@ curl http://localhost:50000/health
 #### 🚀 快速部署
 
 ```bash
-# CPU 版本（适合开发测试）
-./docker-build.sh --cpu
-./docker-build.sh --run-cpu
+# 默认GPU版本（生产环境推荐）
+./docker-build.sh                      # 构建并启动GPU版本
 
-# GPU 版本（适合生产环境）
-./docker-build.sh --gpu  
-./docker-build.sh --run-gpu
+# 或分步执行
+./docker-build.sh --gpu                # 构建GPU版本
+./docker-build.sh --run                # 运行GPU服务
 
-# 或使用 docker-compose
-docker-compose up -d                    # CPU 版本
-docker-compose --profile gpu up -d      # GPU 版本
+# CPU版本（开发测试）
+./docker-build.sh --cpu                # 构建CPU版本  
+./docker-build.sh --run-cpu            # 运行CPU服务
+
+# 使用 docker-compose
+docker-compose up -d                    # GPU 版本（默认）
+docker-compose --profile cpu up -d     # CPU 版本
 ```
 
 #### 🐳 Docker 镜像构建
 
-**CPU 版本**:
-```bash
-docker build -t sensevoice-api:cpu .
-docker run -d -p 50000:50000 --name sensevoice-cpu sensevoice-api:cpu
-```
-
-**GPU 版本**:
+**GPU 版本（默认）**:
 ```bash
 docker build -t sensevoice-api:gpu -f Dockerfile.gpu .
 docker run -d -p 50000:50000 --gpus all --name sensevoice-gpu sensevoice-api:gpu
 ```
 
+**CPU 版本（开发测试）**:
+```bash
+docker build -t sensevoice-api:cpu .
+docker run -d -p 50000:50000 --name sensevoice-cpu sensevoice-api:cpu
+```
+
 #### 📋 Docker Compose 配置
 
-```yaml
+```bash
 # 基本使用
-docker-compose up -d                    # CPU 服务 (端口 50000)
-docker-compose --profile gpu up -d      # GPU 服务 (端口 50001)
+docker-compose up -d                    # GPU 服务 (端口 50000)
+docker-compose --profile cpu up -d      # CPU 服务 (端口 50001)  
 docker-compose --profile nginx up -d    # 带 Nginx 代理
 
 # 查看日志
