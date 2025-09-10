@@ -17,31 +17,115 @@ logger = logging.getLogger(__name__)
 
 class WebSocketStreamingHandler:
     """WebSocket流式处理器"""
-    
+
     def __init__(self, connection_manager: ConnectionManager):
         self.connection_manager = connection_manager
         self.asr_handler = StreamingASRHandler()
         self.audio_processor = AudioProcessor()
         self.settings = get_settings()
+        self.consumer_tasks = {}  # 存储每个客户端的消费任务
     
     async def handle_websocket(self, websocket: WebSocket, client_id: Optional[str] = None):
         """处理WebSocket连接"""
         client_id = await self.connection_manager.connect(websocket, client_id)
-        
+
+        # 启动独立的消费任务
+        consumer_task = asyncio.create_task(self._audio_consumer_loop(client_id))
+        self.consumer_tasks[client_id] = consumer_task
+
         try:
             while True:
-                # 接收消息
+                # 接收消息（只负责接收，不处理）
                 data = await websocket.receive_text()
                 await self._process_message(client_id, data)
-                
+
         except WebSocketDisconnect:
             logger.info(f"客户端 {client_id} 主动断开连接")
         except Exception as e:
             logger.error(f"WebSocket处理错误 (客户端 {client_id}): {e}")
             await self._send_error_message(client_id, f"服务器错误: {str(e)}")
         finally:
+            # 停止消费任务
+            if client_id in self.consumer_tasks:
+                self.consumer_tasks[client_id].cancel()
+                del self.consumer_tasks[client_id]
             self.connection_manager.disconnect(client_id)
-    
+
+    async def _audio_consumer_loop(self, client_id: str):
+        """独立的音频消费循环
+
+        持续监控客户端的音频缓冲区，当VAD检测到完整语音片段时进行消费
+        """
+        logger.info(f"启动客户端 {client_id} 的音频消费循环")
+
+        try:
+            while True:
+                # 获取客户端的音频缓冲区
+                audio_buffer = self.connection_manager.get_audio_buffer(client_id)
+
+                if audio_buffer:
+                    current_duration = audio_buffer.get_duration()
+
+                    # 5秒窗口策略：等待足够的音频累积
+                    if current_duration >= 5.0:  # 至少有5秒音频才考虑处理
+                        logger.info(f"客户端 {client_id} 检查5秒窗口: {current_duration:.2f}s")
+
+                        # 尝试消费音频（只有VAD检测到完整片段才会真正消费）
+                        result = await self.asr_handler.process_audio_with_independent_vad(
+                            audio_buffer,
+                            language="auto"
+                        )
+
+                        # 如果有识别结果，说明成功消费了
+                        if result.get("text") and result["text"].strip():
+                            await self._send_recognition_result(client_id, result)
+                            logger.info(f"客户端 {client_id} 成功消费，剩余缓冲区: {audio_buffer.get_duration():.2f}s")
+                        else:
+                            # 没有识别结果，说明VAD没有检测到完整片段，继续等待
+                            logger.debug(f"客户端 {client_id} VAD未检测到完整片段，继续累积")
+
+                        # 处理后等待一段时间，避免过度处理
+                        await asyncio.sleep(1.0)
+                    else:
+                        # 缓冲区音频不足5秒，继续等待
+                        await asyncio.sleep(0.5)
+                else:
+                    # 没有音频缓冲区，等待
+                    await asyncio.sleep(0.5)
+
+        except asyncio.CancelledError:
+            logger.info(f"客户端 {client_id} 的音频消费循环已停止")
+        except Exception as e:
+            logger.error(f"客户端 {client_id} 音频消费循环错误: {e}")
+
+    async def _send_recognition_result(self, client_id: str, result: Dict[str, Any]):
+        """发送识别结果给客户端"""
+        try:
+            text = result.get("text", "")
+            message = {
+                "type": "result",  # 前端期望的类型
+                "status": "success",
+                "text": text,
+                "raw_text": text,  # 原始文本
+                "clean_text": text,  # 清理后的文本（暂时相同）
+                "confidence": 0.95,  # 默认置信度
+                "model_type": "SenseVoice",  # 模型类型
+                "is_final": True,  # 标记为最终结果
+                "language": result.get("language", "auto"),
+                "timestamp": result.get("timestamp"),
+                "segment_start_time": result.get("segment_start_time"),
+                "segment_end_time": result.get("segment_end_time"),
+                "segment_duration": result.get("segment_duration")
+            }
+
+            await self.connection_manager.send_message(client_id, message)
+            self.connection_manager.increment_stat(client_id, "recognitions")
+
+            logger.info(f"客户端 {client_id} 独立VAD识别结果: {result.get('text', '')}")
+
+        except Exception as e:
+            logger.error(f"发送识别结果失败 (客户端 {client_id}): {e}")
+
     async def _process_message(self, client_id: str, message_data: str):
         """处理接收到的消息"""
         try:
@@ -133,18 +217,17 @@ class WebSocketStreamingHandler:
             
             logger.info(f"音频解码成功，样本数: {len(audio_array)}")
             
-            # 添加到缓冲区
+            # 添加到缓冲区（只负责接收，不处理）
             audio_buffer.add_audio(audio_array)
-            
+
             # 验证音频质量
             if not self.audio_processor.validate_audio_format(audio_array, min_duration=0.5):
                 logger.debug("音频质量不符合要求，跳过处理")
                 return
-            
-            # 检查是否有足够的音频进行处理
-            chunk_duration = config.get("chunk_duration", self.settings.default_chunk_duration)
-            if audio_buffer.has_enough_audio(chunk_duration):
-                await self._process_audio_chunk(client_id, audio_buffer, config)
+
+            logger.debug(f"音频已添加到缓冲区，当前缓冲区时长: {audio_buffer.get_duration():.2f}s")
+
+            # 注意：不在这里进行VAD处理，处理由独立的消费循环负责
             
         except Exception as e:
             logger.error(f"音频消息处理错误 (客户端 {client_id}): {e}")
@@ -184,6 +267,35 @@ class WebSocketStreamingHandler:
             logger.error(f"音频块处理错误 (客户端 {client_id}): {e}")
             await self._send_error_message(client_id, f"音频识别失败: {str(e)}")
             self.connection_manager.increment_stat(client_id, "errors")
+
+    async def _process_audio_with_independent_vad(self, client_id: str, audio_buffer, config: Dict[str, Any]):
+        """使用独立VAD模型进行音频处理"""
+        try:
+            language = config.get("language", "auto")
+
+            # 使用独立VAD进行处理
+            result = await self.asr_handler.process_audio_with_independent_vad(
+                audio_buffer,
+                language=language
+            )
+
+            # 如果有识别结果，发送给客户端
+            if result.get("text") and result["text"].strip():
+                response = {
+                    "type": "result",
+                    "timestamp": asyncio.get_event_loop().time(),
+                    **result
+                }
+
+                await self.connection_manager.send_message(client_id, response)
+                self.connection_manager.increment_stat(client_id, "audio_chunks_processed")
+
+                logger.info(f"客户端 {client_id} 独立VAD识别结果: {result['text']}")
+
+        except Exception as e:
+            logger.error(f"独立VAD音频处理错误 (客户端 {client_id}): {e}")
+            await self._send_error_message(client_id, f"独立VAD音频识别失败: {str(e)}")
+            self.connection_manager.increment_stat(client_id, "errors")
     
     async def _handle_ping_message(self, client_id: str, message: Dict[str, Any]):
         """处理ping消息"""
@@ -198,10 +310,12 @@ class WebSocketStreamingHandler:
         audio_buffer = self.connection_manager.get_audio_buffer(client_id)
         if audio_buffer:
             audio_buffer.clear()
+            # 同时清空ASR缓存
+            self.connection_manager.clear_asr_cache(client_id)
             await self.connection_manager.send_message(client_id, {
                 "type": "cleared",
                 "status": "success",
-                "message": "音频缓冲区已清空"
+                "message": "音频缓冲区和ASR缓存已清空"
             })
         else:
             await self._send_error_message(client_id, "无法清空缓冲区")

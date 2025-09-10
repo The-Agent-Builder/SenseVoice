@@ -30,6 +30,7 @@ class ConnectionManager:
         self.active_connections[client_id] = {
             "websocket": websocket,
             "audio_buffer": AudioBuffer(),
+            "asr_cache": {},  # 为FunASR模型维护的持久cache
             "config": {
                 "language": "auto",
                 "chunk_duration": self.settings.default_chunk_duration,
@@ -39,7 +40,8 @@ class ConnectionManager:
             "stats": {
                 "messages_received": 0,
                 "audio_chunks_processed": 0,
-                "errors": 0
+                "errors": 0,
+                "recognitions": 0
             }
         }
         
@@ -65,6 +67,7 @@ class ConnectionManager:
                 f"客户端 {client_id} 已断开连接。"
                 f"统计信息: 接收消息 {stats['messages_received']}, "
                 f"处理音频块 {stats['audio_chunks_processed']}, "
+                f"识别次数 {stats['recognitions']}, "
                 f"错误 {stats['errors']}"
             )
             
@@ -122,11 +125,29 @@ class ConnectionManager:
         if connection_info:
             return connection_info["audio_buffer"]
         return None
+
+    def get_asr_cache(self, client_id: str) -> Optional[dict]:
+        """获取客户端的ASR缓存"""
+        connection_info = self.get_connection_info(client_id)
+        if connection_info:
+            return connection_info["asr_cache"]
+        return None
+
+    def clear_asr_cache(self, client_id: str) -> bool:
+        """清空客户端的ASR缓存"""
+        connection_info = self.get_connection_info(client_id)
+        if connection_info:
+            connection_info["asr_cache"].clear()
+            return True
+        return False
     
     def increment_stat(self, client_id: str, stat_name: str):
         """增加统计计数"""
         if client_id in self.active_connections:
-            self.active_connections[client_id]["stats"][stat_name] += 1
+            stats = self.active_connections[client_id]["stats"]
+            if stat_name not in stats:
+                stats[stat_name] = 0
+            stats[stat_name] += 1
     
     def get_connection_count(self) -> int:
         """获取当前连接数"""
