@@ -1,0 +1,64 @@
+# SenseVoice API GPU Docker 镜像
+# 专用于 NVIDIA GPU 环境
+
+FROM nvidia/cuda:12.1-runtime-ubuntu22.04
+
+# 设置时区和语言环境
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Asia/Shanghai
+ENV LANG=C.UTF-8
+
+# 安装系统依赖
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    python3-dev \
+    build-essential \
+    curl \
+    git \
+    ffmpeg \
+    libsndfile1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# 创建符号链接
+RUN ln -s /usr/bin/python3 /usr/bin/python
+
+# 设置工作目录
+WORKDIR /app
+
+# 复制项目文件
+COPY requirements.txt .
+COPY *.py ./
+COPY config/ ./config/
+COPY handlers/ ./handlers/
+COPY models/ ./models/
+COPY utils/ ./utils/
+COPY websocket/ ./websocket/
+COPY static/ ./static/
+COPY .env.example .env
+
+# 安装 GPU 版本的 PyTorch
+RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+# 安装其他依赖
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 创建缓存目录
+RUN mkdir -p /root/.cache/modelscope
+
+# 环境变量配置
+ENV SENSEVOICE_DEVICE=cuda
+ENV SENSEVOICE_HOST=0.0.0.0
+ENV SENSEVOICE_PORT=50000
+ENV SENSEVOICE_LOG_LEVEL=INFO
+ENV PYTHONPATH=/app
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:${SENSEVOICE_PORT}/health || exit 1
+
+# 暴露端口
+EXPOSE 50000
+
+# 启动服务
+CMD ["python", "main.py"]

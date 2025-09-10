@@ -1,0 +1,56 @@
+# Docker 构建忽略文件
+
+# Git
+.git/
+.gitignore
+
+# 环境文件
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 日志
+logs/
+*.log
+
+# 临时文件
+tmp/
+temp/
+
+# 文档（构建时不需要）
+*.md
+!README.md
+
+# 测试文件
+test_*.py
+*_test.py
+
+# 构建脚本
+docker-build.sh
+install_gpu.sh
+
+# Docker 文件本身
+Dockerfile*
+docker-compose*.yml
+.dockerignore

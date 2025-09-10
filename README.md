@@ -43,22 +43,38 @@ SenseVoice/
 
 ### 安装依赖
 
+#### 🚀 自动安装（推荐）
+
+使用自动安装脚本，会根据你的环境自动选择合适的PyTorch版本：
+
 ```bash
 # 克隆仓库
 git clone <repository-url>
 cd SenseVoice
 
-# 安装基础依赖
-pip install -r requirements.txt
+# 运行自动安装脚本
+./install_gpu.sh
+```
 
-# GPU 版本 (CUDA 11.8)
+#### 🔧 手动安装
+
+**GPU环境（生产推荐）**:
+```bash
+# 1. 先安装GPU版本PyTorch
+# CUDA 11.8
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 
-# GPU 版本 (CUDA 12.1)  
+# CUDA 12.1
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 
-# CPU 版本
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+# 2. 安装其他依赖
+pip install -r requirements.txt
+```
+
+**CPU环境（开发测试）**:
+```bash
+# 直接安装所有依赖（默认CPU版本）
+pip install -r requirements.txt
 ```
 
 ### 配置环境
@@ -165,32 +181,60 @@ curl http://localhost:50000/health
 
 ## 🔧 部署选项
 
-### Docker 部署
+### Docker 部署（推荐）
+
+#### 🚀 快速部署
+
+```bash
+# CPU 版本（适合开发测试）
+./docker-build.sh --cpu
+./docker-build.sh --run-cpu
+
+# GPU 版本（适合生产环境）
+./docker-build.sh --gpu  
+./docker-build.sh --run-gpu
+
+# 或使用 docker-compose
+docker-compose up -d                    # CPU 版本
+docker-compose --profile gpu up -d      # GPU 版本
+```
+
+#### 🐳 Docker 镜像构建
+
+**CPU 版本**:
+```bash
+docker build -t sensevoice-api:cpu .
+docker run -d -p 50000:50000 --name sensevoice-cpu sensevoice-api:cpu
+```
 
 **GPU 版本**:
-```dockerfile
-FROM nvidia/cuda:11.8-runtime-ubuntu20.04
-
-RUN apt-get update && apt-get install -y python3 python3-pip
-COPY . /app
-WORKDIR /app
-
-RUN pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-RUN pip install -r requirements.txt
-
-ENV SENSEVOICE_DEVICE=cuda
-ENV SENSEVOICE_HOST=0.0.0.0
-ENV SENSEVOICE_PORT=50000
-
-EXPOSE 50000
-CMD ["python3", "main.py"]
-```
-
-**构建和运行**:
 ```bash
-docker build -t sensevoice-api .
-docker run --gpus all -p 50000:50000 sensevoice-api
+docker build -t sensevoice-api:gpu -f Dockerfile.gpu .
+docker run -d -p 50000:50000 --gpus all --name sensevoice-gpu sensevoice-api:gpu
 ```
+
+#### 📋 Docker Compose 配置
+
+```yaml
+# 基本使用
+docker-compose up -d                    # CPU 服务 (端口 50000)
+docker-compose --profile gpu up -d      # GPU 服务 (端口 50001)
+docker-compose --profile nginx up -d    # 带 Nginx 代理
+
+# 查看日志
+docker-compose logs -f
+
+# 停止服务  
+docker-compose down
+```
+
+### 直接部署
+
+#### 环境要求
+
+- Python 3.8+
+- PyTorch 2.0+
+- CUDA (可选，用于 GPU 加速)
 
 ### 环境变量配置
 
