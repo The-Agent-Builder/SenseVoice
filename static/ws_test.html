@@ -1,0 +1,1220 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SenseVoice WebSocket 测试</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background-color: #fafafa;
+        }
+        .section h3 {
+            margin-top: 0;
+            color: #555;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin: 15px 0;
+            flex-wrap: wrap;
+        }
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+        }
+        .btn-primary {
+            background-color: #007bff;
+            color: white;
+        }
+        .btn-primary:hover {
+            background-color: #0056b3;
+        }
+        .btn-success {
+            background-color: #28a745;
+            color: white;
+        }
+        .btn-success:hover {
+            background-color: #1e7e34;
+        }
+        .btn-danger {
+            background-color: #dc3545;
+            color: white;
+        }
+        .btn-danger:hover {
+            background-color: #c82333;
+        }
+        .btn-secondary {
+            background-color: #6c757d;
+            color: white;
+        }
+        .btn-secondary:hover {
+            background-color: #545b62;
+        }
+        .config-group {
+            display: flex;
+            gap: 15px;
+            margin: 10px 0;
+            flex-wrap: wrap;
+        }
+        .config-item {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        label {
+            font-weight: bold;
+            color: #555;
+        }
+        select, input {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-weight: bold;
+        }
+        .status.connected {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status.connecting {
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        .log {
+            height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            background-color: #f8f9fa;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+        }
+        .result {
+            min-height: 100px;
+            border: 1px solid #ddd;
+            padding: 15px;
+            background-color: white;
+            border-radius: 5px;
+            font-size: 16px;
+            line-height: 1.5;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 15px 0;
+        }
+        .stat-item {
+            background: white;
+            padding: 15px;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #007bff;
+        }
+        .stat-label {
+            color: #666;
+            font-size: 14px;
+        }
+        .full-text {
+            min-height: 150px;
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            font-size: 16px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .audio-visualizer {
+            width: 100%;
+            height: 60px;
+            background: #000;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 SenseVoice WebSocket 实时语音识别测试</h1>
+        
+        <!-- 连接状态 -->
+        <div class="section">
+            <h3>连接状态</h3>
+            <div id="connectionStatus" class="status disconnected">未连接</div>
+            <div class="controls">
+                <button id="connectBtn" class="btn-primary">连接</button>
+                <button id="disconnectBtn" class="btn-danger" disabled>断开连接</button>
+                <button id="clearLogBtn" class="btn-secondary">清空日志</button>
+            </div>
+        </div>
+
+        <!-- 配置 -->
+        <div class="section">
+            <h3>配置</h3>
+            <div class="config-group">
+                <div class="config-item">
+                    <label for="languageSelect">语言:</label>
+                    <select id="languageSelect">
+                        <option value="auto">自动检测</option>
+                        <option value="zh">中文</option>
+                        <option value="en">英文</option>
+                        <option value="yue">粤语</option>
+                        <option value="ja">日语</option>
+                        <option value="ko">韩语</option>
+                    </select>
+                </div>
+                <div class="config-item">
+                    <label for="chunkDuration">音频块时长(秒):</label>
+                    <input type="number" id="chunkDuration" min="1" max="10" step="0.5" value="3">
+                </div>
+                <div class="config-item">
+                    <label for="useVad">使用VAD:</label>
+                    <input type="checkbox" id="useVad" checked>
+                </div>
+            </div>
+            <div class="controls">
+                <button id="updateConfigBtn" class="btn-primary">更新配置</button>
+            </div>
+        </div>
+
+        <!-- 音频录制 -->
+        <div class="section">
+            <h3>音频录制</h3>
+            <canvas id="audioVisualizer" class="audio-visualizer"></canvas>
+            
+            <!-- 实时录音控制 -->
+            <div style="margin: 15px 0;">
+                <h4>实时录音</h4>
+                <div class="controls">
+                    <button id="startRecordBtn" class="btn-success">开始录音</button>
+                    <button id="stopRecordBtn" class="btn-danger" disabled>停止录音</button>
+                    <button id="clearBufferBtn" class="btn-secondary">清空缓冲区</button>
+                </div>
+            </div>
+            
+            <!-- 文件上传 -->
+            <div style="margin: 15px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; background-color: #f9f9f9;">
+                <h4>文件上传</h4>
+                <div style="margin: 10px 0;">
+                    <label for="fileInput">选择音频文件:</label>
+                    <input type="file" id="fileInput" accept="audio/*" style="margin: 10px 0;">
+                </div>
+                <div class="controls">
+                    <button id="processFileBtn" class="btn-primary" disabled>开始识别</button>
+                    <button id="pauseFileBtn" class="btn-secondary" disabled style="display:none;">暂停</button>
+                    <button id="resumeFileBtn" class="btn-success" disabled style="display:none;">继续</button>
+                    <button id="stopFileBtn" class="btn-danger" disabled style="display:none;">停止</button>
+                    <span id="fileStatus" style="margin-left: 10px; font-size: 14px; color: #666;"></span>
+                </div>
+                <div style="font-size: 12px; color: #666; margin-top: 10px;">
+                    支持格式：MP3、M4A、WAV、FLAC、OGG等常见音频格式<br>
+                    流式处理：支持任意大小文件，自动分块进行实时识别
+                </div>
+            </div>
+        </div>
+
+        <!-- 识别结果 -->
+        <div class="section">
+            <h3>识别结果</h3>
+            <div id="result" class="result">等待识别结果...</div>
+            
+            <!-- 完整文本历史 -->
+            <div style="margin-top: 20px;">
+                <h4>完整识别文本</h4>
+                <div class="controls">
+                    <button id="clearTextBtn" class="btn-secondary">清空文本</button>
+                    <button id="copyTextBtn" class="btn-primary">复制文本</button>
+                </div>
+                <div id="fullText" class="full-text">识别的文本将在这里累积显示...</div>
+            </div>
+        </div>
+
+        <!-- 统计信息 -->
+        <div class="section">
+            <h3>统计信息</h3>
+            <div class="stats">
+                <div class="stat-item">
+                    <div id="messageCount" class="stat-value">0</div>
+                    <div class="stat-label">发送消息数</div>
+                </div>
+                <div class="stat-item">
+                    <div id="resultCount" class="stat-value">0</div>
+                    <div class="stat-label">识别结果数</div>
+                </div>
+                <div class="stat-item">
+                    <div id="errorCount" class="stat-value">0</div>
+                    <div class="stat-label">错误数</div>
+                </div>
+                <div class="stat-item">
+                    <div id="connectionTime" class="stat-value">0s</div>
+                    <div class="stat-label">连接时长</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 日志 -->
+        <div class="section">
+            <h3>日志</h3>
+            <div id="log" class="log"></div>
+        </div>
+    </div>
+
+    <script>
+        class WebSocketASRClient {
+            constructor() {
+                this.ws = null;
+                this.isConnected = false;
+                this.isRecording = false;
+                this.mediaRecorder = null;
+                this.audioContext = null;
+                this.analyser = null;
+                this.microphone = null;
+                this.stats = {
+                    messageCount: 0,
+                    resultCount: 0,
+                    errorCount: 0,
+                    connectionTime: 0
+                };
+                this.connectionStartTime = null;
+                this.connectionTimer = null;
+
+                this.initializeElements();
+                this.setupEventListeners();
+                this.setupAudioVisualizer();
+            }
+
+            initializeElements() {
+                this.elements = {
+                    connectionStatus: document.getElementById('connectionStatus'),
+                    connectBtn: document.getElementById('connectBtn'),
+                    disconnectBtn: document.getElementById('disconnectBtn'),
+                    clearLogBtn: document.getElementById('clearLogBtn'),
+                    languageSelect: document.getElementById('languageSelect'),
+                    chunkDuration: document.getElementById('chunkDuration'),
+                    useVad: document.getElementById('useVad'),
+                    updateConfigBtn: document.getElementById('updateConfigBtn'),
+                    startRecordBtn: document.getElementById('startRecordBtn'),
+                    stopRecordBtn: document.getElementById('stopRecordBtn'),
+                    clearBufferBtn: document.getElementById('clearBufferBtn'),
+                    fileInput: document.getElementById('fileInput'),
+                    processFileBtn: document.getElementById('processFileBtn'),
+                    pauseFileBtn: document.getElementById('pauseFileBtn'),
+                    resumeFileBtn: document.getElementById('resumeFileBtn'),
+                    stopFileBtn: document.getElementById('stopFileBtn'),
+                    fileStatus: document.getElementById('fileStatus'),
+                    result: document.getElementById('result'),
+                    fullText: document.getElementById('fullText'),
+                    clearTextBtn: document.getElementById('clearTextBtn'),
+                    copyTextBtn: document.getElementById('copyTextBtn'),
+                    log: document.getElementById('log'),
+                    messageCount: document.getElementById('messageCount'),
+                    resultCount: document.getElementById('resultCount'),
+                    errorCount: document.getElementById('errorCount'),
+                    connectionTime: document.getElementById('connectionTime'),
+                    audioVisualizer: document.getElementById('audioVisualizer')
+                };
+                
+                // 初始化完整文本存储
+                this.fullTextContent = '';
+                this.selectedFile = null;
+                
+                // 文件处理控制变量
+                this.fileProcessing = {
+                    isProcessing: false,
+                    isPaused: false,
+                    isStopped: false,
+                    currentChunk: 0,
+                    totalChunks: 0,
+                    audioData: null,
+                    chunkSize: 0
+                };
+            }
+
+            setupEventListeners() {
+                this.elements.connectBtn.addEventListener('click', () => this.connect());
+                this.elements.disconnectBtn.addEventListener('click', () => this.disconnect());
+                this.elements.clearLogBtn.addEventListener('click', () => this.clearLog());
+                this.elements.updateConfigBtn.addEventListener('click', () => this.updateConfig());
+                this.elements.startRecordBtn.addEventListener('click', () => this.startRecording());
+                this.elements.stopRecordBtn.addEventListener('click', () => this.stopRecording());
+                this.elements.clearBufferBtn.addEventListener('click', () => this.clearBuffer());
+                this.elements.fileInput.addEventListener('change', (e) => this.handleFileSelection(e));
+                this.elements.processFileBtn.addEventListener('click', () => this.processSelectedFile());
+                this.elements.pauseFileBtn.addEventListener('click', () => this.pauseFileProcessing());
+                this.elements.resumeFileBtn.addEventListener('click', () => this.resumeFileProcessing());
+                this.elements.stopFileBtn.addEventListener('click', () => this.stopFileProcessing());
+                this.elements.clearTextBtn.addEventListener('click', () => this.clearFullText());
+                this.elements.copyTextBtn.addEventListener('click', () => this.copyFullText());
+            }
+
+            setupAudioVisualizer() {
+                const canvas = this.elements.audioVisualizer;
+                this.canvasContext = canvas.getContext('2d');
+                canvas.width = canvas.offsetWidth;
+                canvas.height = canvas.offsetHeight;
+            }
+
+            async connect() {
+                if (this.isConnected) return;
+
+                this.updateConnectionStatus('connecting', '连接中...');
+                this.log('正在连接WebSocket...');
+
+                try {
+                    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    const wsUrl = `${protocol}//${window.location.host}/ws/asr`;
+
+                    this.ws = new WebSocket(wsUrl);
+
+                    this.ws.onopen = () => {
+                        this.isConnected = true;
+                        this.connectionStartTime = Date.now();
+                        this.updateConnectionStatus('connected', '已连接');
+                        this.log('WebSocket连接成功');
+                        this.elements.connectBtn.disabled = true;
+                        this.elements.disconnectBtn.disabled = false;
+                        this.startConnectionTimer();
+                    };
+
+                    this.ws.onmessage = (event) => {
+                        this.handleMessage(JSON.parse(event.data));
+                    };
+
+                    this.ws.onclose = () => {
+                        this.isConnected = false;
+                        this.updateConnectionStatus('disconnected', '连接已断开');
+                        this.log('WebSocket连接已断开');
+                        this.elements.connectBtn.disabled = false;
+                        this.elements.disconnectBtn.disabled = true;
+                        this.stopConnectionTimer();
+                        if (this.isRecording) {
+                            this.stopRecording();
+                        }
+                    };
+
+                    this.ws.onerror = (error) => {
+                        this.log(`WebSocket错误: ${error}`);
+                        this.stats.errorCount++;
+                        this.updateStats();
+                    };
+
+                } catch (error) {
+                    this.log(`连接失败: ${error.message}`);
+                    this.updateConnectionStatus('disconnected', '连接失败');
+                    this.stats.errorCount++;
+                    this.updateStats();
+                }
+            }
+
+            disconnect() {
+                if (this.ws) {
+                    this.ws.close();
+                }
+                if (this.isRecording) {
+                    this.stopRecording();
+                }
+            }
+
+            handleMessage(message) {
+                this.log(`收到消息: ${JSON.stringify(message, null, 2)}`);
+
+                switch (message.type) {
+                    case 'connection':
+                        this.log(`连接确认: ${message.message}`);
+                        break;
+                    case 'result':
+                        this.handleResult(message);
+                        break;
+                    case 'error':
+                        this.log(`错误: ${message.message}`);
+                        this.stats.errorCount++;
+                        break;
+                    case 'config_updated':
+                        this.log('配置已更新');
+                        break;
+                    case 'pong':
+                        this.log('收到pong响应');
+                        break;
+                    case 'cleared':
+                        this.log('缓冲区已清空');
+                        break;
+                }
+
+                this.updateStats();
+            }
+
+            handleResult(message) {
+                if (message.text && message.text.trim()) {
+                    // 显示当前识别结果
+                    this.elements.result.innerHTML = `
+                        <div><strong>识别文本:</strong> ${message.text}</div>
+                        <div><strong>原始文本:</strong> ${message.raw_text || 'N/A'}</div>
+                        <div><strong>清理文本:</strong> ${message.clean_text || 'N/A'}</div>
+                        <div><strong>置信度:</strong> ${(message.confidence * 100).toFixed(1)}%</div>
+                        <div><strong>模型类型:</strong> ${message.model_type || 'N/A'}</div>
+                        <div><strong>状态:</strong> ${message.is_final ? '最终结果' : '中间结果'}</div>
+                    `;
+                    
+                    // 添加到完整文本中（只添加最终结果）
+                    if (message.is_final) {
+                        const timestamp = new Date().toLocaleTimeString();
+                        const textToAdd = `[${timestamp}] ${message.text}\n`;
+                        this.fullTextContent += textToAdd;
+                        this.elements.fullText.textContent = this.fullTextContent;
+                        // 自动滚动到底部
+                        this.elements.fullText.scrollTop = this.elements.fullText.scrollHeight;
+                    }
+                    
+                    this.stats.resultCount++;
+                } else {
+                    this.elements.result.innerHTML = '等待识别结果...';
+                }
+            }
+
+            sendMessage(message) {
+                if (this.ws && this.isConnected) {
+                    this.ws.send(JSON.stringify(message));
+                    this.stats.messageCount++;
+                    this.updateStats();
+                    this.log(`发送消息: ${JSON.stringify(message, null, 2)}`);
+                } else {
+                    this.log('WebSocket未连接，无法发送消息');
+                }
+            }
+
+            updateConfig() {
+                const config = {
+                    language: this.elements.languageSelect.value,
+                    chunk_duration: parseFloat(this.elements.chunkDuration.value),
+                    use_vad: this.elements.useVad.checked,
+                    encoding: 'base64'
+                };
+
+                this.sendMessage({
+                    type: 'config',
+                    config: config
+                });
+            }
+
+            async startRecording() {
+                if (this.isRecording) return;
+
+                try {
+                    this.stream = await navigator.mediaDevices.getUserMedia({
+                        audio: {
+                            sampleRate: 48000, // Opus最佳采样率
+                            channelCount: 1,
+                            echoCancellation: true,
+                            noiseSuppression: true
+                        }
+                    });
+
+                    // 使用MediaRecorder直接录制Opus格式
+                    this.mediaRecorder = new MediaRecorder(this.stream, {
+                        mimeType: 'audio/webm;codecs=opus',
+                        audioBitsPerSecond: 64000 // 64kbps对语音来说足够了
+                    });
+
+                    // 音频数据缓冲
+                    this.audioChunks = [];
+                    
+                    this.mediaRecorder.ondataavailable = (event) => {
+                        if (event.data.size > 0) {
+                            this.audioChunks.push(event.data);
+                        }
+                    };
+
+                    // 定期发送累积的音频数据
+                    this.mediaRecorder.onstop = () => {
+                        if (this.audioChunks.length > 0) {
+                            const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm;codecs=opus' });
+                            this.processOpusAudio(audioBlob);
+                            this.audioChunks = [];
+                        }
+                    };
+
+                    // 设置音频可视化
+                    this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    this.microphone = this.audioContext.createMediaStreamSource(this.stream);
+                    this.analyser = this.audioContext.createAnalyser();
+                    this.microphone.connect(this.analyser);
+
+                    // 每2秒发送一次音频数据
+                    this.mediaRecorder.start();
+                    this.recordingInterval = setInterval(() => {
+                        if (this.isRecording && this.mediaRecorder.state === 'recording') {
+                            this.mediaRecorder.stop();
+                            setTimeout(() => {
+                                if (this.isRecording) {
+                                    this.audioChunks = [];
+                                    this.mediaRecorder.start();
+                                }
+                            }, 50);
+                        }
+                    }, 2000);
+
+                    this.isRecording = true;
+                    this.elements.startRecordBtn.disabled = true;
+                    this.elements.stopRecordBtn.disabled = false;
+                    this.log('开始录音（Opus格式）');
+                    this.startVisualization();
+
+                } catch (error) {
+                    this.log(`录音失败: ${error.message}`);
+                    this.stats.errorCount++;
+                    this.updateStats();
+                }
+            }
+
+            stopRecording() {
+                if (!this.isRecording) return;
+
+                this.isRecording = false;
+
+                // 清除录制间隔
+                if (this.recordingInterval) {
+                    clearInterval(this.recordingInterval);
+                    this.recordingInterval = null;
+                }
+
+                if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
+                    this.mediaRecorder.stop();
+                }
+
+                if (this.stream) {
+                    this.stream.getTracks().forEach(track => track.stop());
+                }
+
+                if (this.audioContext) {
+                    this.audioContext.close();
+                }
+
+                this.elements.startRecordBtn.disabled = false;
+                this.elements.stopRecordBtn.disabled = true;
+                this.log('停止录音');
+                this.stopVisualization();
+            }
+
+            async processOpusAudio(audioBlob) {
+                try {
+                    const arrayBuffer = await audioBlob.arrayBuffer();
+                    const base64Data = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+
+                    this.sendMessage({
+                        type: 'audio',
+                        data: base64Data,
+                        format: 'opus'
+                    });
+
+                } catch (error) {
+                    this.log(`Opus音频处理失败: ${error.message}`);
+                    this.stats.errorCount++;
+                    this.updateStats();
+                }
+            }
+
+            async processAudioData(audioBlob) {
+                try {
+                    const arrayBuffer = await audioBlob.arrayBuffer();
+                    const base64Data = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+
+                    this.sendMessage({
+                        type: 'audio',
+                        data: base64Data,
+                        format: 'webm'
+                    });
+
+                } catch (error) {
+                    this.log(`音频处理失败: ${error.message}`);
+                    this.stats.errorCount++;
+                    this.updateStats();
+                }
+            }
+
+            handleFileSelection(event) {
+                const file = event.target.files[0];
+                if (!file) {
+                    this.selectedFile = null;
+                    this.updateFileButtons('ready');
+                    this.elements.fileStatus.textContent = '';
+                    return;
+                }
+
+                // 检查文件类型
+                if (!file.type.includes('audio/')) {
+                    this.elements.fileStatus.textContent = '请选择音频文件';
+                    this.elements.fileStatus.style.color = '#dc3545';
+                    this.selectedFile = null;
+                    this.updateFileButtons('ready');
+                    return;
+                }
+
+                this.selectedFile = file;
+                this.updateFileButtons('ready');
+                this.elements.fileStatus.textContent = `已选择: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`;
+                this.elements.fileStatus.style.color = '#28a745';
+                
+                this.log(`文件已选择: ${file.name}`);
+            }
+
+            async processSelectedFile() {
+                if (!this.selectedFile) {
+                    this.log('没有选择文件');
+                    return;
+                }
+
+                if (!this.isConnected) {
+                    this.log('请先连接WebSocket');
+                    return;
+                }
+
+                try {
+                    this.fileProcessing.isProcessing = true;
+                    this.fileProcessing.isPaused = false;
+                    this.fileProcessing.isStopped = false;
+                    this.fileProcessing.currentChunk = 0;
+                    
+                    this.updateFileButtons('processing');
+                    this.elements.fileStatus.textContent = '正在转换为音频流...';
+                    this.elements.fileStatus.style.color = '#007bff';
+
+                    this.log(`开始流式处理文件: ${this.selectedFile.name} (${(this.selectedFile.size / 1024 / 1024).toFixed(2)} MB)`);
+
+                    // 预处理音频文件
+                    await this.prepareFileForStreaming(this.selectedFile);
+                    
+                    // 开始流式发送
+                    await this.streamFileChunks();
+
+                } catch (error) {
+                    this.log(`文件流式处理失败: ${error.message}`);
+                    this.stats.errorCount++;
+                    this.updateStats();
+                    this.resetFileProcessing();
+                }
+            }
+
+            async prepareFileForStreaming(file) {
+                // 使用Web Audio API将文件转换为音频流
+                const arrayBuffer = await file.arrayBuffer();
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)({
+                    sampleRate: 48000
+                });
+                
+                // 解码音频文件
+                const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                this.log(`音频解码成功: ${audioBuffer.duration.toFixed(2)}秒, 采样率: ${audioBuffer.sampleRate}Hz`);
+                
+                // 转换为目标采样率（如果需要）
+                let processedBuffer = audioBuffer;
+                if (audioBuffer.sampleRate !== 48000) {
+                    processedBuffer = await this.resampleAudioBuffer(audioBuffer, 48000, audioContext);
+                }
+                
+                // 转换为单声道
+                const monoData = this.convertToMono(processedBuffer);
+                
+                // 计算分块参数
+                const chunkDuration = 2.0; // 2秒chunks
+                const samplesPerChunk = Math.floor(48000 * chunkDuration);
+                const totalChunks = Math.ceil(monoData.length / samplesPerChunk);
+                
+                // 保存处理参数
+                this.fileProcessing.audioData = monoData;
+                this.fileProcessing.chunkSize = samplesPerChunk;
+                this.fileProcessing.totalChunks = totalChunks;
+                
+                audioContext.close();
+                this.log(`音频预处理完成，共 ${totalChunks} 个音频块`);
+            }
+
+            async streamFileChunks() {
+                const { audioData, chunkSize, totalChunks } = this.fileProcessing;
+                
+                this.log(`开始发送 ${totalChunks} 个音频块...`);
+                
+                for (let i = this.fileProcessing.currentChunk; i < totalChunks; i++) {
+                    // 检查是否被停止
+                    if (this.fileProcessing.isStopped) {
+                        this.log('文件处理已停止');
+                        break;
+                    }
+                    
+                    // 检查是否被暂停
+                    if (this.fileProcessing.isPaused) {
+                        this.log('文件处理已暂停');
+                        return;
+                    }
+                    
+                    const start = i * chunkSize;
+                    const end = Math.min(start + chunkSize, audioData.length);
+                    const chunk = audioData.slice(start, end);
+                    
+                    // 更新处理进度
+                    this.fileProcessing.currentChunk = i;
+                    const progress = ((i + 1) / totalChunks * 100).toFixed(1);
+                    this.elements.fileStatus.textContent = `处理进度: ${progress}% (${i + 1}/${totalChunks})`;
+                    
+                    // 将音频块转换为Opus格式并发送
+                    await this.sendAudioChunk(chunk, 48000);
+                    
+                    // 短暂延迟，避免发送过快
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                }
+                
+                // 处理完成
+                if (!this.fileProcessing.isStopped && !this.fileProcessing.isPaused) {
+                    this.log(`文件流式处理完成，共发送 ${totalChunks} 个音频块`);
+                    this.fileProcessingComplete();
+                }
+            }
+
+            pauseFileProcessing() {
+                this.fileProcessing.isPaused = true;
+                this.updateFileButtons('paused');
+                this.elements.fileStatus.textContent = `处理已暂停 (${this.fileProcessing.currentChunk}/${this.fileProcessing.totalChunks})`;
+                this.elements.fileStatus.style.color = '#ffc107';
+                this.log('文件处理已暂停');
+            }
+
+            async resumeFileProcessing() {
+                this.fileProcessing.isPaused = false;
+                this.updateFileButtons('processing');
+                this.elements.fileStatus.style.color = '#007bff';
+                this.log('恢复文件处理');
+                
+                // 继续处理剩余块
+                await this.streamFileChunks();
+            }
+
+            stopFileProcessing() {
+                this.fileProcessing.isStopped = true;
+                this.fileProcessing.isPaused = false;
+                this.resetFileProcessing();
+                this.log('文件处理已停止');
+            }
+
+            fileProcessingComplete() {
+                this.fileProcessing.isProcessing = false;
+                this.updateFileButtons('completed');
+                this.elements.fileStatus.textContent = `文件流式处理完成: ${this.selectedFile.name}`;
+                this.elements.fileStatus.style.color = '#28a745';
+            }
+
+            resetFileProcessing() {
+                this.fileProcessing.isProcessing = false;
+                this.fileProcessing.isPaused = false;
+                this.fileProcessing.isStopped = false;
+                this.fileProcessing.currentChunk = 0;
+                this.updateFileButtons('ready');
+                this.elements.fileStatus.textContent = '处理失败或已停止';
+                this.elements.fileStatus.style.color = '#dc3545';
+            }
+
+            updateFileButtons(state) {
+                // 重置所有按钮
+                this.elements.processFileBtn.disabled = true;
+                this.elements.pauseFileBtn.disabled = true;
+                this.elements.resumeFileBtn.disabled = true;
+                this.elements.stopFileBtn.disabled = true;
+                
+                this.elements.pauseFileBtn.style.display = 'none';
+                this.elements.resumeFileBtn.style.display = 'none';
+                this.elements.stopFileBtn.style.display = 'none';
+
+                switch (state) {
+                    case 'ready':
+                        this.elements.processFileBtn.disabled = this.selectedFile === null;
+                        this.elements.processFileBtn.textContent = '开始识别';
+                        break;
+                    case 'processing':
+                        this.elements.processFileBtn.textContent = '流式处理中...';
+                        this.elements.pauseFileBtn.disabled = false;
+                        this.elements.pauseFileBtn.style.display = 'inline-block';
+                        this.elements.stopFileBtn.disabled = false;
+                        this.elements.stopFileBtn.style.display = 'inline-block';
+                        break;
+                    case 'paused':
+                        this.elements.processFileBtn.textContent = '流式处理中...';
+                        this.elements.resumeFileBtn.disabled = false;
+                        this.elements.resumeFileBtn.style.display = 'inline-block';
+                        this.elements.stopFileBtn.disabled = false;
+                        this.elements.stopFileBtn.style.display = 'inline-block';
+                        break;
+                    case 'completed':
+                        this.elements.processFileBtn.disabled = false;
+                        this.elements.processFileBtn.textContent = '重新识别';
+                        break;
+                }
+            }
+
+            async processFileAsStream(file) {
+                try {
+                    // 使用Web Audio API将文件转换为音频流
+                    const arrayBuffer = await file.arrayBuffer();
+                    const audioContext = new (window.AudioContext || window.webkitAudioContext)({
+                        sampleRate: 48000
+                    });
+                    
+                    // 解码音频文件
+                    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                    this.log(`音频解码成功: ${audioBuffer.duration.toFixed(2)}秒, 采样率: ${audioBuffer.sampleRate}Hz`);
+                    
+                    // 转换为目标采样率（如果需要）
+                    let processedBuffer = audioBuffer;
+                    if (audioBuffer.sampleRate !== 48000) {
+                        processedBuffer = await this.resampleAudioBuffer(audioBuffer, 48000, audioContext);
+                    }
+                    
+                    // 转换为单声道
+                    const monoData = this.convertToMono(processedBuffer);
+                    
+                    // 分块发送音频数据
+                    const chunkDuration = 2.0; // 2秒chunks
+                    const samplesPerChunk = Math.floor(48000 * chunkDuration);
+                    const totalChunks = Math.ceil(monoData.length / samplesPerChunk);
+                    
+                    this.log(`开始发送 ${totalChunks} 个音频块...`);
+                    
+                    for (let i = 0; i < totalChunks; i++) {
+                        const start = i * samplesPerChunk;
+                        const end = Math.min(start + samplesPerChunk, monoData.length);
+                        const chunk = monoData.slice(start, end);
+                        
+                        // 更新处理进度
+                        const progress = ((i + 1) / totalChunks * 100).toFixed(1);
+                        this.elements.fileStatus.textContent = `处理进度: ${progress}% (${i + 1}/${totalChunks})`;
+                        
+                        // 将音频块转换为Opus格式并发送
+                        await this.sendAudioChunk(chunk, 48000);
+                        
+                        // 短暂延迟，避免发送过快
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                    }
+                    
+                    audioContext.close();
+                    this.log(`文件流式处理完成，共发送 ${totalChunks} 个音频块`);
+                    
+                } catch (error) {
+                    throw new Error(`音频流处理失败: ${error.message}`);
+                }
+            }
+
+            convertToMono(audioBuffer) {
+                // 转换为单声道
+                const channels = audioBuffer.numberOfChannels;
+                const length = audioBuffer.length;
+                const monoData = new Float32Array(length);
+                
+                if (channels === 1) {
+                    // 已经是单声道
+                    monoData.set(audioBuffer.getChannelData(0));
+                } else {
+                    // 多声道混合为单声道
+                    for (let i = 0; i < length; i++) {
+                        let sum = 0;
+                        for (let channel = 0; channel < channels; channel++) {
+                            sum += audioBuffer.getChannelData(channel)[i];
+                        }
+                        monoData[i] = sum / channels;
+                    }
+                }
+                
+                return monoData;
+            }
+
+            async sendAudioChunk(audioData, sampleRate) {
+                try {
+                    // 创建临时音频上下文进行编码
+                    const tempContext = new (window.AudioContext || window.webkitAudioContext)({
+                        sampleRate: sampleRate
+                    });
+                    
+                    // 创建音频缓冲区
+                    const buffer = tempContext.createBuffer(1, audioData.length, sampleRate);
+                    buffer.copyToChannel(audioData, 0);
+                    
+                    // 使用MediaRecorder进行Opus编码
+                    const stream = new MediaStream();
+                    const source = tempContext.createBufferSource();
+                    const destination = tempContext.createMediaStreamDestination();
+                    
+                    source.buffer = buffer;
+                    source.connect(destination);
+                    
+                    stream.addTrack(destination.stream.getAudioTracks()[0]);
+                    
+                    const recorder = new MediaRecorder(stream, {
+                        mimeType: 'audio/webm;codecs=opus',
+                        audioBitsPerSecond: 64000
+                    });
+                    
+                    return new Promise((resolve) => {
+                        const chunks = [];
+                        
+                        recorder.ondataavailable = (event) => {
+                            if (event.data.size > 0) {
+                                chunks.push(event.data);
+                            }
+                        };
+                        
+                        recorder.onstop = async () => {
+                            if (chunks.length > 0) {
+                                const opusBlob = new Blob(chunks, { type: 'audio/webm;codecs=opus' });
+                                const base64Data = await this.blobToBase64(opusBlob);
+                                
+                                this.sendMessage({
+                                    type: 'audio',
+                                    data: base64Data,
+                                    format: 'opus'
+                                });
+                            }
+                            
+                            tempContext.close();
+                            resolve();
+                        };
+                        
+                        recorder.start();
+                        source.start();
+                        
+                        // 等待音频播放完成后停止录制
+                        setTimeout(() => {
+                            recorder.stop();
+                        }, (audioData.length / sampleRate) * 1000 + 100);
+                    });
+                    
+                } catch (error) {
+                    console.error('音频块编码失败:', error);
+                    throw error;
+                }
+            }
+
+            async blobToBase64(blob) {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        const dataUrl = e.target.result;
+                        const base64 = dataUrl.split(',')[1];
+                        resolve(base64);
+                    };
+                    reader.onerror = reject;
+                    reader.readAsDataURL(blob);
+                });
+            }
+
+            async arrayBufferToBase64(buffer) {
+                // 使用 FileReader API 避免栈溢出
+                return new Promise((resolve, reject) => {
+                    const blob = new Blob([buffer]);
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        const dataUrl = e.target.result;
+                        const base64 = dataUrl.split(',')[1]; // 移除 "data:application/octet-stream;base64," 前缀
+                        resolve(base64);
+                    };
+                    reader.onerror = function(e) {
+                        reject(new Error('读取文件失败'));
+                    };
+                    reader.readAsDataURL(blob);
+                });
+            }
+
+            async handleFileUpload(event) {
+                // 保留原有方法以防兼容性问题
+                const file = event.target.files[0];
+                if (!file) return;
+
+                try {
+                    // 检查文件类型
+                    if (!file.type.includes('audio/')) {
+                        this.log('请选择音频文件');
+                        return;
+                    }
+
+                    const arrayBuffer = await file.arrayBuffer();
+                    const base64Data = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+
+                    this.sendMessage({
+                        type: 'audio',
+                        data: base64Data,
+                        format: 'opus'
+                    });
+
+                    this.log(`上传文件: ${file.name} (假设为Opus格式)`);
+
+                } catch (error) {
+                    this.log(`文件上传失败: ${error.message}`);
+                    this.stats.errorCount++;
+                    this.updateStats();
+                }
+            }
+
+            clearBuffer() {
+                this.sendMessage({
+                    type: 'clear'
+                });
+            }
+
+            startVisualization() {
+                if (!this.analyser) return;
+
+                const bufferLength = this.analyser.frequencyBinCount;
+                const dataArray = new Uint8Array(bufferLength);
+                const canvas = this.elements.audioVisualizer;
+                const canvasCtx = this.canvasContext;
+
+                const draw = () => {
+                    if (!this.isRecording) return;
+
+                    requestAnimationFrame(draw);
+
+                    this.analyser.getByteFrequencyData(dataArray);
+
+                    canvasCtx.fillStyle = 'rgb(0, 0, 0)';
+                    canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+
+                    const barWidth = (canvas.width / bufferLength) * 2.5;
+                    let barHeight;
+                    let x = 0;
+
+                    for (let i = 0; i < bufferLength; i++) {
+                        barHeight = dataArray[i] / 255 * canvas.height;
+
+                        canvasCtx.fillStyle = `rgb(${barHeight + 100}, 50, 50)`;
+                        canvasCtx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+
+                        x += barWidth + 1;
+                    }
+                };
+
+                draw();
+            }
+
+            stopVisualization() {
+                const canvas = this.elements.audioVisualizer;
+                const canvasCtx = this.canvasContext;
+                canvasCtx.fillStyle = 'rgb(0, 0, 0)';
+                canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+            }
+
+            updateConnectionStatus(status, message) {
+                this.elements.connectionStatus.className = `status ${status}`;
+                this.elements.connectionStatus.textContent = message;
+            }
+
+            startConnectionTimer() {
+                this.connectionTimer = setInterval(() => {
+                    if (this.connectionStartTime) {
+                        const elapsed = Math.floor((Date.now() - this.connectionStartTime) / 1000);
+                        this.elements.connectionTime.textContent = `${elapsed}s`;
+                    }
+                }, 1000);
+            }
+
+            stopConnectionTimer() {
+                if (this.connectionTimer) {
+                    clearInterval(this.connectionTimer);
+                    this.connectionTimer = null;
+                }
+            }
+
+            updateStats() {
+                this.elements.messageCount.textContent = this.stats.messageCount;
+                this.elements.resultCount.textContent = this.stats.resultCount;
+                this.elements.errorCount.textContent = this.stats.errorCount;
+            }
+
+            log(message) {
+                const timestamp = new Date().toLocaleTimeString();
+                this.elements.log.textContent += `[${timestamp}] ${message}\n`;
+                this.elements.log.scrollTop = this.elements.log.scrollHeight;
+            }
+
+            clearLog() {
+                this.elements.log.textContent = '';
+            }
+            
+            clearFullText() {
+                this.fullTextContent = '';
+                this.elements.fullText.textContent = '识别的文本将在这里累积显示...';
+                this.log('完整文本已清空');
+            }
+            
+            async copyFullText() {
+                try {
+                    if (this.fullTextContent.trim()) {
+                        await navigator.clipboard.writeText(this.fullTextContent);
+                        this.log('完整文本已复制到剪贴板');
+                    } else {
+                        this.log('没有可复制的文本');
+                    }
+                } catch (error) {
+                    this.log(`复制失败: ${error.message}`);
+                    // 降级方案：选择文本
+                    try {
+                        const range = document.createRange();
+                        range.selectNodeContents(this.elements.fullText);
+                        const selection = window.getSelection();
+                        selection.removeAllRanges();
+                        selection.addRange(range);
+                        this.log('文本已选中，请手动复制 (Ctrl+C)');
+                    } catch (fallbackError) {
+                        this.log('复制功能不可用');
+                    }
+                }
+            }
+        }
+
+        // 初始化客户端
+        const client = new WebSocketASRClient();
+    </script>
+</body>
+</html>
