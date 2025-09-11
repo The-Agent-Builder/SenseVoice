@@ -42,7 +42,11 @@ class Settings:
         """智能设备选择"""
         # 优先使用环境变量指定的设备
         env_device = os.getenv("SENSEVOICE_DEVICE", "").lower()
-        if env_device in ["cpu", "cuda", "mps", "auto"]:
+
+        # 支持具体的 CUDA 设备指定，如 cuda:0, cuda:1 等
+        if env_device.startswith("cuda:"):
+            return self._validate_specific_cuda_device(env_device)
+        elif env_device in ["cpu", "cuda", "mps", "auto"]:
             if env_device == "auto":
                 return self._auto_detect_device()
             elif env_device == "cuda":
@@ -51,7 +55,7 @@ class Settings:
                 return self._validate_mps_device()
             else:
                 return env_device
-        
+
         # 默认自动检测最佳设备
         return self._auto_detect_device()
     
@@ -79,17 +83,66 @@ class Settings:
             print(f"设备检测异常，使用CPU: {e}")
             return "cpu"
     
-    def _validate_cuda_device(self) -> str:
-        """验证CUDA设备是否可用"""
+    def _validate_specific_cuda_device(self, device: str) -> str:
+        """验证指定的CUDA设备是否可用"""
         try:
             import torch
-            if torch.cuda.is_available():
-                gpu_count = torch.cuda.device_count()
-                print(f"使用CUDA设备，检测到 {gpu_count} 个GPU")
-                return "cuda"
-            else:
+            if not torch.cuda.is_available():
                 print("CUDA不可用，降级到CPU")
                 return "cpu"
+
+            # 解析设备编号
+            device_id = int(device.split(":")[1])
+            gpu_count = torch.cuda.device_count()
+
+            if device_id >= gpu_count:
+                print(f"指定的GPU设备 {device} 不存在（共有 {gpu_count} 个GPU），使用 cuda:0")
+                return "cuda:0"
+
+            # 检查指定GPU的显存使用情况
+            torch.cuda.set_device(device_id)
+            memory_allocated = torch.cuda.memory_allocated(device_id) / 1024**2  # MB
+            memory_reserved = torch.cuda.memory_reserved(device_id) / 1024**2   # MB
+            memory_total = torch.cuda.get_device_properties(device_id).total_memory / 1024**2  # MB
+
+            print(f"使用指定的CUDA设备: {device}")
+            print(f"GPU {device_id} 显存状态: {memory_allocated:.0f}MB 已分配, {memory_reserved:.0f}MB 已保留, 总计 {memory_total:.0f}MB")
+
+            return device
+
+        except Exception as e:
+            print(f"指定CUDA设备验证失败，使用CPU: {e}")
+            return "cpu"
+
+    def _validate_cuda_device(self) -> str:
+        """验证CUDA设备是否可用，自动选择最空闲的GPU"""
+        try:
+            import torch
+            if not torch.cuda.is_available():
+                print("CUDA不可用，降级到CPU")
+                return "cpu"
+
+            gpu_count = torch.cuda.device_count()
+            print(f"使用CUDA设备，检测到 {gpu_count} 个GPU")
+
+            # 查找显存使用最少的GPU
+            best_device = 0
+            min_memory_used = float('inf')
+
+            for i in range(gpu_count):
+                torch.cuda.set_device(i)
+                memory_allocated = torch.cuda.memory_allocated(i)
+                memory_reserved = torch.cuda.memory_reserved(i)
+                total_used = memory_allocated + memory_reserved
+
+                if total_used < min_memory_used:
+                    min_memory_used = total_used
+                    best_device = i
+
+            selected_device = f"cuda:{best_device}"
+            print(f"自动选择显存使用最少的GPU: {selected_device}")
+            return selected_device
+
         except Exception as e:
             print(f"CUDA验证失败，使用CPU: {e}")
             return "cpu"

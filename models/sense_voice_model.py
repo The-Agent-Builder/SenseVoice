@@ -25,10 +25,13 @@ class SenseVoiceModelManager:
     def initialize(self) -> bool:
         """初始化模型"""
         try:
+            # 设置显存管理
+            self._setup_memory_management()
+
             # 初始化SenseVoiceSmall模型（用于HTTP接口）
             logger.info(f"正在加载SenseVoice模型: {self.settings.model_dir}")
             self.sense_voice_model, self.sense_voice_kwargs = SenseVoiceSmall.from_pretrained(
-                model=self.settings.model_dir, 
+                model=self.settings.model_dir,
                 device=self.settings.device
             )
             self.sense_voice_model.eval()
@@ -52,10 +55,36 @@ class SenseVoiceModelManager:
             
             self._initialized = True
             return True
-            
+
         except Exception as e:
             logger.error(f"模型初始化失败: {e}")
             return False
+
+    def _setup_memory_management(self):
+        """设置显存管理"""
+        try:
+            if self.settings.device.startswith("cuda"):
+                # 设置具体的GPU设备
+                if ":" in self.settings.device:
+                    device_id = int(self.settings.device.split(":")[1])
+                    torch.cuda.set_device(device_id)
+                    logger.info(f"设置当前CUDA设备为: {self.settings.device}")
+
+                # 清理显存缓存
+                torch.cuda.empty_cache()
+
+                # 设置显存分配策略
+                # 使用更保守的显存分配策略
+                torch.cuda.memory.set_per_process_memory_fraction(0.8)  # 限制使用80%显存
+
+                # 启用显存回收
+                import gc
+                gc.collect()
+
+                logger.info("显存管理设置完成")
+
+        except Exception as e:
+            logger.warning(f"显存管理设置失败: {e}")
     
     def is_initialized(self) -> bool:
         """检查模型是否已初始化"""
