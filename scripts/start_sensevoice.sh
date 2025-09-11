@@ -129,10 +129,10 @@ start_service() {
         warn "端口 $SENSEVOICE_PORT 已被占用"
         info "正在查找占用进程..."
         netstat -tlnp 2>/dev/null | grep ":$SENSEVOICE_PORT " || true
-        
-        read -p "是否要杀死占用进程并继续？(y/N): " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
+
+        # 如果是自动模式，直接杀死占用进程
+        if [ "$AUTO_START" = true ]; then
+            log "自动模式：正在杀死占用进程..."
             PID=$(netstat -tlnp 2>/dev/null | grep ":$SENSEVOICE_PORT " | awk '{print $7}' | cut -d'/' -f1)
             if [ ! -z "$PID" ]; then
                 kill -9 "$PID" 2>/dev/null || true
@@ -140,7 +140,18 @@ start_service() {
                 sleep 2
             fi
         else
-            error "端口被占用，启动取消"
+            read -p "是否要杀死占用进程并继续？(y/N): " -n 1 -r
+            echo
+            if [[ $REPLY =~ ^[Yy]$ ]]; then
+                PID=$(netstat -tlnp 2>/dev/null | grep ":$SENSEVOICE_PORT " | awk '{print $7}' | cut -d'/' -f1)
+                if [ ! -z "$PID" ]; then
+                    kill -9 "$PID" 2>/dev/null || true
+                    log "已杀死进程 $PID"
+                    sleep 2
+                fi
+            else
+                error "端口被占用，启动取消"
+            fi
         fi
     fi
     
@@ -177,7 +188,7 @@ main() {
     show_startup_info
     
     # 等待用户确认
-    if [ "$1" != "--auto" ]; then
+    if [ "$AUTO_START" != true ]; then
         read -p "按 Enter 键继续启动，或 Ctrl+C 取消..."
     fi
     
