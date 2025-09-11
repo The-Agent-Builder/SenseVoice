@@ -26,6 +26,11 @@ class Settings:
         self.api_description = os.getenv("SENSEVOICE_API_DESCRIPTION", "语音识别API，支持HTTP和WebSocket接口")
         self.api_version = os.getenv("SENSEVOICE_API_VERSION", "1.0.0")
 
+        # SenseVoice模型配置
+        self.enable_emotion_tags = os.getenv("SENSEVOICE_ENABLE_EMOTION_TAGS", "true").lower() == "true"
+        self.enable_language_tags = os.getenv("SENSEVOICE_ENABLE_LANGUAGE_TAGS", "true").lower() == "true"
+        self.use_itn = os.getenv("SENSEVOICE_USE_ITN", "false").lower() == "true"  # 默认关闭ITN以保留标记
+
         # 服务配置
         self.host = os.getenv("SENSEVOICE_HOST", "0.0.0.0")
         self.port = int(os.getenv("SENSEVOICE_PORT", "50000"))

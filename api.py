@@ -159,8 +159,8 @@ async def turn_audio_to_text(
     res = m.inference(
         data_in=audios,
         language=lang,  # "zh", "en", "yue", "ja", "ko", "nospeech"
-        use_itn=False,
-        ban_emo_unk=False,
+        use_itn=False,  # 关闭逆文本标准化，保留原始标记
+        ban_emo_unk=False,  # 允许情感标记输出
         key=key,
         fs=TARGET_FS,
         **kwargs,

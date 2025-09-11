@@ -4,6 +4,7 @@ WebSocket流式处理模块
 import json
 import logging
 import asyncio
+import time
 from typing import Dict, Any, Optional
 from fastapi import WebSocket, WebSocketDisconnect
 
@@ -101,18 +102,22 @@ class WebSocketStreamingHandler:
     async def _send_recognition_result(self, client_id: str, result: Dict[str, Any]):
         """发送识别结果给客户端"""
         try:
+            # 获取处理后的文本字段，如果ASR结果中没有提供，则使用默认处理
             text = result.get("text", "")
+            raw_text = result.get("raw_text", text)
+            clean_text = result.get("clean_text", text)
+
             message = {
                 "type": "result",  # 前端期望的类型
                 "status": "success",
-                "text": text,
-                "raw_text": text,  # 原始文本
-                "clean_text": text,  # 清理后的文本（暂时相同）
+                "text": text,  # 经过后处理的文本（包含表情符号转换）
+                "raw_text": raw_text,  # 原始识别文本
+                "clean_text": clean_text,  # 清理特殊标记后的文本
                 "confidence": 0.95,  # 默认置信度
                 "model_type": "SenseVoice",  # 模型类型
                 "is_final": True,  # 标记为最终结果
                 "language": result.get("language", "auto"),
-                "timestamp": result.get("timestamp"),
+                "timestamp": time.time(),
                 "segment_start_time": result.get("segment_start_time"),
                 "segment_end_time": result.get("segment_end_time"),
                 "segment_duration": result.get("segment_duration")
@@ -256,7 +261,7 @@ class WebSocketStreamingHandler:
             # 发送结果
             response = {
                 "type": "result",
-                "timestamp": asyncio.get_event_loop().time(),
+                "timestamp": time.time(),
                 **result
             }
             
@@ -283,7 +288,7 @@ class WebSocketStreamingHandler:
             if result.get("text") and result["text"].strip():
                 response = {
                     "type": "result",
-                    "timestamp": asyncio.get_event_loop().time(),
+                    "timestamp": time.time(),
                     **result
                 }
 
@@ -301,7 +306,7 @@ class WebSocketStreamingHandler:
         """处理ping消息"""
         await self.connection_manager.send_message(client_id, {
             "type": "pong",
-            "timestamp": asyncio.get_event_loop().time(),
+            "timestamp": time.time(),
             "message": "pong"
         })
     
@@ -326,5 +331,5 @@ class WebSocketStreamingHandler:
             "type": "error",
             "status": "error",
             "message": error_message,
-            "timestamp": asyncio.get_event_loop().time()
+            "timestamp": time.time()
         })

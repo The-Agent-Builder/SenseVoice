@@ -91,7 +91,7 @@ class StreamingASRHandler:
                 input=audio_tensor.numpy(),
                 cache={},
                 language=language,
-                use_itn=True,
+                use_itn=False,  # 关闭逆文本标准化，保留原始标记
                 batch_size_s=60,
                 merge_vad=True,
                 merge_length_s=kwargs.get("merge_length_s", 2),
@@ -123,7 +123,7 @@ class StreamingASRHandler:
                 input=audio_tensor.numpy(),
                 cache=cache,  # 使用持久的cache
                 language=language,
-                use_itn=True,
+                use_itn=False,  # 关闭逆文本标准化，保留原始标记
                 batch_size_s=60,
                 merge_vad=True,  # 启用VAD合并
                 merge_length_s=kwargs.get("merge_length_s", 0),  # 让VAD决定分割点
@@ -380,8 +380,8 @@ class StreamingASRHandler:
             res = sense_voice_model.inference(
                 data_in=[audio_tensor],
                 language=language,
-                use_itn=True,  # 启用逆文本标准化
-                ban_emo_unk=False,
+                use_itn=False,  # 关闭逆文本标准化，保留原始标记
+                ban_emo_unk=False,  # 允许情感标记输出
                 key=["vad_segment"],
                 fs=self.settings.target_sample_rate,
                 **sense_voice_kwargs,
@@ -410,8 +410,8 @@ class StreamingASRHandler:
             res = sense_voice_model.inference(
                 data_in=[audio_tensor],
                 language=language,
-                use_itn=False,
-                ban_emo_unk=False,
+                use_itn=False,  # 关闭逆文本标准化，保留原始标记
+                ban_emo_unk=False,  # 允许情感标记输出
                 key=["streaming_chunk"],
                 fs=self.settings.target_sample_rate,
                 **sense_voice_kwargs,
