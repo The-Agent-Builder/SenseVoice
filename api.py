@@ -112,9 +112,22 @@ async def websocket_asr_endpoint(websocket: WebSocket):
     await ws_handler.handle_websocket(websocket)
 
 
+@app.get("/health")
+async def health_check():
+    """健康检查端点 - 用于 Docker 和负载均衡器"""
+    try:
+        # 基础健康检查
+        if not model_manager.is_initialized():
+            return {"status": "unhealthy", "reason": "model_not_initialized"}
+
+        return {"status": "healthy"}
+    except Exception as e:
+        return {"status": "unhealthy", "reason": str(e)}
+
+
 @app.get("/api/v1/status")
 async def get_status():
-    """获取服务状态"""
+    """获取详细服务状态"""
     return {
         "status": "running",
         "model_initialized": model_manager.is_initialized(),

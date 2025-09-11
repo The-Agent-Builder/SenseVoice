@@ -1,0 +1,164 @@
+name: SenseVoice CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  DOCKER_IMAGE_NAME: sensevoice
+  DEPLOY_PATH: /opt/sensevoice
+
+jobs:
+  # 代码质量检查和测试
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install flake8 pytest
+
+    - name: Code quality check
+      run: |
+        # 代码风格检查
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+    - name: Run basic tests
+      run: |
+        # 基础导入测试
+        python -c "import config.settings; print('Config import OK')"
+        python -c "import handlers.audio_handler; print('Audio handler import OK')"
+        python -c "import websocket.connection_manager; print('WebSocket manager import OK')"
+
+    - name: Test Docker build (CPU version)
+      run: |
+        docker build -f Dockerfile -t ${{ env.DOCKER_IMAGE_NAME }}:test-cpu .
+        docker run --rm ${{ env.DOCKER_IMAGE_NAME }}:test-cpu python -c "print('Docker build test passed')"
+
+  # 构建和部署
+  build-and-deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build GPU Docker image
+      run: |
+        docker build -f Dockerfile.gpu -t ${{ env.DOCKER_IMAGE_NAME }}:latest .
+        docker build -f Dockerfile.gpu -t ${{ env.DOCKER_IMAGE_NAME }}:gpu-latest .
+
+    - name: Build CPU Docker image
+      run: |
+        docker build -f Dockerfile -t ${{ env.DOCKER_IMAGE_NAME }}:cpu-latest .
+
+    - name: Save Docker images
+      run: |
+        docker save ${{ env.DOCKER_IMAGE_NAME }}:latest | gzip > sensevoice-gpu-latest.tar.gz
+        docker save ${{ env.DOCKER_IMAGE_NAME }}:cpu-latest | gzip > sensevoice-cpu-latest.tar.gz
+
+    - name: Copy files to server
+      uses: appleboy/scp-action@v0.1.4
+      with:
+        host: ${{ secrets.SERVER_HOST }}
+        username: ${{ secrets.SERVER_USER }}
+        key: ${{ secrets.SERVER_SSH_KEY }}
+        port: ${{ secrets.SERVER_PORT }}
+        source: "sensevoice-gpu-latest.tar.gz,sensevoice-cpu-latest.tar.gz,docker-compose.yml,.env.example"
+        target: ${{ env.DEPLOY_PATH }}/temp/
+
+    - name: Deploy to GPU server
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.SERVER_HOST }}
+        username: ${{ secrets.SERVER_USER }}
+        key: ${{ secrets.SERVER_SSH_KEY }}
+        port: ${{ secrets.SERVER_PORT }}
+        script: |
+          set -e
+
+          # 创建部署目录
+          sudo mkdir -p ${{ env.DEPLOY_PATH }}
+          sudo chown ${{ secrets.SERVER_USER }}:${{ secrets.SERVER_USER }} ${{ env.DEPLOY_PATH }}
+
+          # 进入部署目录
+          cd ${{ env.DEPLOY_PATH }}
+
+          # 备份当前版本
+          if [ -f docker-compose.yml ]; then
+            echo "Creating backup..."
+            sudo docker-compose down || true
+            cp docker-compose.yml docker-compose.yml.backup.$(date +%Y%m%d_%H%M%S) || true
+          fi
+
+          # 复制新文件
+          cp temp/docker-compose.yml .
+          cp temp/.env.example .env
+
+          # 加载新的Docker镜像
+          echo "Loading new Docker images..."
+          docker load < temp/sensevoice-gpu-latest.tar.gz
+          docker load < temp/sensevoice-cpu-latest.tar.gz
+
+          # 清理旧镜像
+          echo "Cleaning up old images..."
+          docker image prune -f || true
+
+          # 启动服务
+          echo "Starting services..."
+          docker-compose up -d
+
+          # 等待服务启动
+          echo "Waiting for service to start..."
+          sleep 30
+
+          # 健康检查
+          echo "Performing health check..."
+          for i in {1..10}; do
+            if curl -f http://localhost:50000/api/v1/status; then
+              echo "Service is healthy!"
+              break
+            fi
+            echo "Health check attempt $i failed, retrying in 10 seconds..."
+            sleep 10
+          done
+
+          # 清理临时文件
+          rm -rf temp/
+
+          echo "Deployment completed successfully!"
+
+    - name: Notify deployment status
+      if: always()
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.SERVER_HOST }}
+        username: ${{ secrets.SERVER_USER }}
+        key: ${{ secrets.SERVER_SSH_KEY }}
+        port: ${{ secrets.SERVER_PORT }}
+        script: |
+          cd ${{ env.DEPLOY_PATH }}
+          echo "=== Deployment Status ==="
+          docker-compose ps
+          echo "=== Service Logs (last 20 lines) ==="
+          docker-compose logs --tail=20 sensevoice
