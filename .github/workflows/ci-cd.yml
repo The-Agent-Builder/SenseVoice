@@ -6,6 +6,38 @@ on:
     tags: [ 'v*' ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: '部署环境'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+        - production
+        - staging
+        - development
+      force_deploy:
+        description: '强制部署（跳过测试）'
+        required: false
+        default: false
+        type: boolean
+      gpu_device:
+        description: 'GPU设备选择'
+        required: false
+        default: 'auto'
+        type: choice
+        options:
+        - auto
+        - cuda:0
+        - cuda:1
+        - cuda:2
+        - cuda:3
+        - cuda:4
+        - cuda:5
+        - cuda:6
+        - cuda:7
+        - cpu
 
 env:
   DOCKER_IMAGE_NAME: sensevoice
@@ -15,6 +47,7 @@ jobs:
   # 代码质量检查和测试
   test:
     runs-on: ubuntu-latest
+    if: ${{ !inputs.force_deploy }}
 
     steps:
     - name: Checkout code
@@ -54,11 +87,17 @@ jobs:
   build-and-deploy:
     needs: test
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    if: always() && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') && (needs.test.result == 'success' || needs.test.result == 'skipped' || inputs.force_deploy)
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+
+    - name: Set deployment environment variables
+      run: |
+        echo "DEPLOY_ENVIRONMENT=${{ inputs.environment || 'production' }}" >> $GITHUB_ENV
+        echo "GPU_DEVICE=${{ inputs.gpu_device || 'auto' }}" >> $GITHUB_ENV
+        echo "FORCE_DEPLOY=${{ inputs.force_deploy || 'false' }}" >> $GITHUB_ENV
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
@@ -114,6 +153,12 @@ jobs:
           # 复制新文件
           cp temp/docker-compose.yml .
           cp temp/.env.example .env
+
+          # 设置GPU设备（如果手动指定）
+          if [ "${{ env.GPU_DEVICE }}" != "auto" ]; then
+            echo "SENSEVOICE_DEVICE=${{ env.GPU_DEVICE }}" >> .env
+            echo "手动设置GPU设备: ${{ env.GPU_DEVICE }}"
+          fi
 
           # 加载新的Docker镜像
           echo "Loading new Docker images..."
