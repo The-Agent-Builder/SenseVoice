@@ -251,7 +251,7 @@ main() {
     log "=== Setup Completed Successfully! ==="
     info "Next steps:"
     info "1. Log out and log back in for Docker group changes to take effect"
-    info "2. Configure GitHub Actions secrets for CI/CD deployment"
+    info "2. Configure GitLab CI/CD variables for deployment"
     info "3. Push code to trigger automatic deployment"
     info ""
     info "Manual deployment command: sudo systemctl start sensevoice"

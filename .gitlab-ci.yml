@@ -1,0 +1,187 @@
+# SenseVoice GitLab CI/CD Pipeline
+# 支持代码质量检查、Docker构建和自动部署
+
+stages:
+  - test
+  - build
+  - deploy
+
+variables:
+  DOCKER_IMAGE_NAME: "sensevoice"
+  DEPLOY_PATH: "/opt/sensevoice"
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: ""
+
+# 代码质量检查和测试
+code_quality:
+  stage: test
+  image: python:3.11-slim
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq curl
+    - pip install --upgrade pip
+    - pip install -r requirements.txt
+    - pip install flake8 pytest
+  script:
+    # 代码风格检查
+    - flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+    - flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+    # 基础导入测试
+    - python -c "import config.settings; print('Config import OK')"
+    - python -c "import handlers.audio_handler; print('Audio handler import OK')"
+    - python -c "import websocket.connection_manager; print('WebSocket manager import OK')"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "web" && $FORCE_DEPLOY == "true"
+      when: never
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "develop"
+    - if: $CI_MERGE_REQUEST_ID
+    - if: $CI_PIPELINE_SOURCE == "web"
+
+# Docker 镜像构建
+build_images:
+  stage: build
+  image: docker:24.0.5
+  services:
+    - docker:24.0.5-dind
+  before_script:
+    - docker info
+  script:
+    # 构建 GPU 版本
+    - echo "构建 GPU Docker 镜像..."
+    - docker build -f Dockerfile.gpu -t $DOCKER_IMAGE_NAME:gpu-latest .
+    - docker build -f Dockerfile.gpu -t $DOCKER_IMAGE_NAME:latest .
+    
+    # 构建 CPU 版本
+    - echo "构建 CPU Docker 镜像..."
+    - docker build -f Dockerfile -t $DOCKER_IMAGE_NAME:cpu-latest .
+    
+    # 保存镜像
+    - echo "保存 Docker 镜像..."
+    - docker save $DOCKER_IMAGE_NAME:latest | gzip > sensevoice-gpu-latest.tar.gz
+    - docker save $DOCKER_IMAGE_NAME:cpu-latest | gzip > sensevoice-cpu-latest.tar.gz
+    
+    # 清理构建缓存
+    - docker system prune -f
+  artifacts:
+    paths:
+      - sensevoice-gpu-latest.tar.gz
+      - sensevoice-cpu-latest.tar.gz
+      - docker-compose.yml
+      - .env.example
+    expire_in: 1 hour
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_TAG =~ /^v.*/
+    - if: $CI_PIPELINE_SOURCE == "web"
+  needs:
+    - job: code_quality
+      optional: true
+
+# 部署到生产服务器
+deploy_production:
+  stage: deploy
+  image: alpine:latest
+  before_script:
+    # 安装必要工具
+    - apk add --no-cache openssh-client curl bash
+    - eval $(ssh-agent -s)
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - ssh-keyscan -H $SERVER_HOST >> ~/.ssh/known_hosts
+    - chmod 644 ~/.ssh/known_hosts
+  script:
+    # 传输文件到服务器
+    - echo "传输文件到服务器..."
+    - scp -P $SERVER_PORT sensevoice-gpu-latest.tar.gz sensevoice-cpu-latest.tar.gz docker-compose.yml .env.example $SERVER_USER@$SERVER_HOST:$DEPLOY_PATH/temp/
+    
+    # 执行部署脚本
+    - |
+      ssh -p $SERVER_PORT $SERVER_USER@$SERVER_HOST << 'EOF'
+        set -e
+        
+        # 进入部署目录
+        cd $DEPLOY_PATH
+        
+        # 创建备份
+        if [ -f docker-compose.yml ]; then
+          echo "创建备份..."
+          sudo docker-compose down || true
+          cp docker-compose.yml docker-compose.yml.backup.$(date +%Y%m%d_%H%M%S) || true
+        fi
+        
+        # 复制新文件
+        cp temp/docker-compose.yml .
+        cp temp/.env.example .env
+        
+        # 设置GPU设备（如果手动指定）
+        if [ "${GPU_DEVICE:-auto}" != "auto" ]; then
+          echo "SENSEVOICE_DEVICE=${GPU_DEVICE}" >> .env
+          echo "手动设置GPU设备: ${GPU_DEVICE}"
+        fi
+        
+        # 加载新的Docker镜像
+        echo "加载新的Docker镜像..."
+        docker load < temp/sensevoice-gpu-latest.tar.gz
+        docker load < temp/sensevoice-cpu-latest.tar.gz
+        
+        # 清理旧镜像
+        echo "清理旧镜像..."
+        docker image prune -f || true
+        
+        # 启动服务
+        echo "启动服务..."
+        docker-compose up -d
+        
+        # 等待服务启动
+        echo "等待服务启动..."
+        sleep 30
+        
+        # 健康检查
+        echo "执行健康检查..."
+        for i in {1..10}; do
+          if curl -f http://localhost:50000/health; then
+            echo "服务健康检查通过!"
+            break
+          fi
+          echo "健康检查尝试 $i 失败，10秒后重试..."
+          sleep 10
+        done
+        
+        # 清理临时文件
+        rm -rf temp/
+        
+        echo "部署完成!"
+      EOF
+  after_script:
+    # 显示部署状态
+    - |
+      ssh -p $SERVER_PORT $SERVER_USER@$SERVER_HOST << 'EOF'
+        cd $DEPLOY_PATH
+        echo "=== 部署状态 ==="
+        docker-compose ps
+        echo "=== 服务日志 (最近20行) ==="
+        docker-compose logs --tail=20 sensevoice
+      EOF
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_TAG =~ /^v.*/
+    - if: $CI_PIPELINE_SOURCE == "web"
+  needs:
+    - job: build_images
+  environment:
+    name: production
+    url: http://$SERVER_HOST:50000
+
+# 手动触发部署（可选择跳过测试）
+manual_deploy:
+  stage: deploy
+  extends: deploy_production
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "web"
+      when: manual
+      allow_failure: false
+  variables:
+    ENVIRONMENT: ${ENVIRONMENT:-production}
+    GPU_DEVICE: ${GPU_DEVICE:-auto}
+    FORCE_DEPLOY: ${FORCE_DEPLOY:-false}

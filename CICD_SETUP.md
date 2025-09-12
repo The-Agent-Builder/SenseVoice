@@ -1,6 +1,6 @@
 # 🚀 SenseVoice CI/CD 部署配置指南
 
-本指南将帮助您快速设置 SenseVoice 项目的 GitHub Actions CI/CD 自动化部署流程。
+本指南将帮助您快速设置 SenseVoice 项目的 GitLab CI/CD 自动化部署流程。
 
 ## 📋 快速开始
 
@@ -10,10 +10,10 @@
 
 ```bash
 # 下载并运行服务器初始化脚本
-curl -fsSL https://raw.githubusercontent.com/your-username/SenseVoice/main/scripts/server-setup.sh | bash
+curl -fsSL http://gitlab.sensedeal.wiki:8060/ketd/sensevoice/-/raw/main/scripts/server-setup.sh | bash
 
 # 或者手动下载后执行
-wget https://raw.githubusercontent.com/your-username/SenseVoice/main/scripts/server-setup.sh
+wget http://gitlab.sensedeal.wiki:8060/ketd/sensevoice/-/raw/main/scripts/server-setup.sh
 chmod +x server-setup.sh
 ./server-setup.sh
 ```
@@ -33,18 +33,18 @@ ssh-copy-id -i ~/.ssh/sensevoice_deploy.pub your-username@your-server-ip
 ssh -i ~/.ssh/sensevoice_deploy your-username@your-server-ip
 ```
 
-### 3. GitHub Secrets 配置
+### 3. GitLab CI/CD 变量配置
 
-在 GitHub 仓库中配置以下 Secrets：
+在 GitLab 项目中配置以下 CI/CD 变量：
 
-**路径**: `Settings → Secrets and variables → Actions → New repository secret`
+**路径**: `Settings → CI/CD → Variables → Add variable`
 
-| Secret 名称 | 值 | 说明 |
+| 变量名称 | 值 | 说明 |
 |------------|----|----|
 | `SERVER_HOST` | `192.168.1.100` | 服务器 IP 地址或域名 |
 | `SERVER_USER` | `ubuntu` | 服务器用户名 |
 | `SERVER_PORT` | `22` | SSH 端口 (默认 22) |
-| `SERVER_SSH_KEY` | `-----BEGIN OPENSSH PRIVATE KEY-----...` | 完整的 SSH 私钥内容 |
+| `SSH_PRIVATE_KEY` | `-----BEGIN OPENSSH PRIVATE KEY-----...` | 完整的 SSH 私钥内容 (类型选择 File) |
 
 ## 🔧 详细配置步骤
 

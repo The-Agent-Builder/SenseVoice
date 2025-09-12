@@ -195,8 +195,7 @@ class WebSocketStreamingHandler:
         """处理音频消息"""
         try:
             audio_data = message.get("data", "")
-            audio_format = message.get("format", "unknown")
-            
+
             if not audio_data:
                 await self._send_error_message(client_id, "音频数据为空")
                 return
@@ -212,12 +211,12 @@ class WebSocketStreamingHandler:
             config = connection_info["config"]
             audio_buffer = connection_info["audio_buffer"]
             
-            # 解码音频数据（固定Opus格式）
+            # 解码音频数据（WebM格式）
             encoding = config.get("encoding", "base64")
             audio_array = self.audio_processor.decode_audio_data(audio_data, encoding)
-            
+
             if audio_array is None:
-                await self._send_error_message(client_id, "Opus音频解码失败")
+                await self._send_error_message(client_id, "WebM音频解码失败")
                 return
             
             logger.info(f"音频解码成功，样本数: {len(audio_array)}")

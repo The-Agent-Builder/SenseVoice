@@ -1,5 +1,6 @@
 """
-音频处理模块
+音频处理模块 - 专门处理WebM格式音频
+支持WebM容器格式（内含Opus编码）的实时音频流处理
 """
 import logging
 import base64
@@ -7,7 +8,6 @@ from collections import deque
 from typing import Optional, List
 import numpy as np
 import torch
-import torchaudio
 from io import BytesIO
 import tempfile
 import os
@@ -22,7 +22,7 @@ try:
     PYDUB_AVAILABLE = True
 except ImportError:
     PYDUB_AVAILABLE = False
-    logging.warning("pydub not available, fallback to basic audio processing")
+    logging.warning("pydub not available, WebM audio processing will not work")
 
 logger = logging.getLogger(__name__)
 
@@ -243,36 +243,35 @@ class AudioProcessor:
         self.settings = get_settings()
     
     def decode_audio_data(self, audio_data: str, encoding: str = "base64") -> Optional[np.ndarray]:
-        """解码Opus音频数据"""
+        """解码WebM音频数据"""
         try:
             if encoding == "base64":
                 # 解码base64音频数据
                 audio_bytes = base64.b64decode(audio_data)
-                logger.info(f"接收到Opus音频数据，长度: {len(audio_bytes)} bytes")
-                
-                # 使用pydub解码Opus格式
-                if PYDUB_AVAILABLE:
-                    audio_array = self._decode_opus_with_pydub(audio_bytes)
-                else:
-                    # 降级到基础处理（假设为WAV格式）
-                    logger.warning("pydub不可用，尝试直接解码为WAV")
-                    audio_array = self._decode_as_wav(audio_bytes)
-                
+                logger.info(f"接收到WebM音频数据，长度: {len(audio_bytes)} bytes")
+
+                # 使用pydub解码WebM格式
+                if not PYDUB_AVAILABLE:
+                    logger.error("pydub不可用，无法解码WebM音频")
+                    return None
+
+                audio_array = self._decode_webm_with_pydub(audio_bytes)
+
                 if audio_array is None:
                     return None
-                
-                logger.info(f"Opus音频解码成功，样本数: {len(audio_array)}")
+
+                logger.info(f"WebM音频解码成功，样本数: {len(audio_array)}")
                 return audio_array
             else:
                 logger.error(f"不支持的音频编码格式: {encoding}")
                 return None
-                
+
         except Exception as e:
-            logger.error(f"Opus音频解码失败: {e}")
+            logger.error(f"WebM音频解码失败: {e}")
             return None
     
-    def _decode_opus_with_pydub(self, audio_bytes: bytes) -> Optional[np.ndarray]:
-        """使用pydub解码Opus音频"""
+    def _decode_webm_with_pydub(self, audio_bytes: bytes) -> Optional[np.ndarray]:
+        """使用pydub解码WebM音频"""
         try:
             # 首先尝试内存处理方式（避免临时文件）
             try:
@@ -292,20 +291,20 @@ class AudioProcessor:
                 # 显式删除audio_segment以释放资源
                 del audio_segment
 
-                logger.debug("使用内存方式成功解码Opus音频")
+                logger.debug("使用内存方式成功解码WebM音频")
                 return audio_array
 
             except Exception as memory_error:
                 logger.debug(f"内存解码失败，回退到临时文件方式: {memory_error}")
                 # 回退到临时文件方式
-                return self._decode_opus_with_temp_file(audio_bytes)
+                return self._decode_webm_with_temp_file(audio_bytes)
 
         except Exception as e:
-            logger.error(f"pydub Opus解码失败: {e}")
+            logger.error(f"pydub WebM解码失败: {e}")
             return None
 
-    def _decode_opus_with_temp_file(self, audio_bytes: bytes) -> Optional[np.ndarray]:
-        """使用临时文件解码Opus音频（回退方案）"""
+    def _decode_webm_with_temp_file(self, audio_bytes: bytes) -> Optional[np.ndarray]:
+        """使用临时文件解码WebM音频（回退方案）"""
         temp_file_path = None
         try:
             # 创建临时文件
@@ -316,7 +315,7 @@ class AudioProcessor:
 
             # 文件句柄已关闭，现在可以安全地被其他程序访问
             try:
-                # 使用pydub加载WebM/Opus文件
+                # 使用pydub加载WebM文件
                 audio_segment = AudioSegment.from_file(temp_file_path, format="webm")
 
                 # 转换为目标采样率和单声道
@@ -339,7 +338,7 @@ class AudioProcessor:
                 self._safe_delete_temp_file(temp_file_path)
 
         except Exception as e:
-            logger.error(f"临时文件Opus解码失败: {e}")
+            logger.error(f"临时文件WebM解码失败: {e}")
             # 确保临时文件被清理
             if temp_file_path:
                 self._safe_delete_temp_file(temp_file_path)
@@ -369,30 +368,7 @@ class AudioProcessor:
                     logger.warning(f"无法删除临时文件 {file_path}: {e}")
                     # 不抛出异常，避免影响主流程
 
-    def _decode_as_wav(self, audio_bytes: bytes) -> Optional[np.ndarray]:
-        """降级方案：尝试直接解码为WAV"""
-        try:
-            audio_io = BytesIO(audio_bytes)
-            waveform, sample_rate = torchaudio.load(audio_io)
-            
-            # 重采样到目标采样率
-            if sample_rate != self.settings.target_sample_rate:
-                resampler = torchaudio.transforms.Resample(
-                    orig_freq=sample_rate, 
-                    new_freq=self.settings.target_sample_rate
-                )
-                waveform = resampler(waveform)
-            
-            # 转换为numpy数组并确保是单声道
-            audio_array = waveform.numpy()
-            if len(audio_array.shape) > 1:
-                audio_array = audio_array.mean(axis=0)
-            
-            return audio_array
-            
-        except Exception as e:
-            logger.error(f"WAV降级解码失败: {e}")
-            return None
+
     
     def preprocess_audio(self, audio_data: np.ndarray) -> torch.Tensor:
         """预处理音频数据"""

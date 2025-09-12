@@ -1,22 +1,22 @@
 # 🚀 手动执行 CI/CD 部署指南
 
-本文档详细说明如何在 GitHub 上手动触发 SenseVoice 的 CI/CD 部署流程。
+本文档详细说明如何在 GitLab 上手动触发 SenseVoice 的 CI/CD 部署流程。
 
 ## 📋 目录
 
-- [GitHub Actions 页面手动触发](#github-actions-页面手动触发)
+- [GitLab CI/CD 页面手动触发](#gitlab-cicd-页面手动触发)
 - [推送代码触发](#推送代码触发)
 - [创建标签触发](#创建标签触发)
 - [API 触发](#api-触发)
 - [故障排除](#故障排除)
 
-## 🖱️ GitHub Actions 页面手动触发
+## 🖱️ GitLab CI/CD 页面手动触发
 
-### 1. 进入 Actions 页面
+### 1. 进入 CI/CD 页面
 
-1. 打开您的 GitHub 仓库: `https://github.com/The-Agent-Builder/SenseVoice`
-2. 点击顶部导航栏的 **"Actions"** 标签
-3. 在左侧工作流列表中找到 **"SenseVoice CI/CD Pipeline"**
+1. 打开您的 GitLab 仓库: `http://gitlab.sensedeal.wiki:8060/ketd/sensevoice`
+2. 点击左侧菜单的 **"CI/CD"** → **"Pipelines"**
+3. 点击 **"Run pipeline"** 按钮
 
 ### 2. 手动运行工作流
 
@@ -147,19 +147,13 @@ gh workflow run "SenseVoice CI/CD Pipeline" \
 # 获取 Personal Access Token
 # Settings → Developer settings → Personal access tokens
 
-# 触发工作流
+# 触发流水线
 curl -X POST \
-  -H "Accept: application/vnd.github.v3+json" \
-  -H "Authorization: token YOUR_TOKEN" \
-  https://api.github.com/repos/The-Agent-Builder/SenseVoice/actions/workflows/ci-cd.yml/dispatches \
-  -d '{
-    "ref": "main",
-    "inputs": {
-      "environment": "production",
-      "force_deploy": "false", 
-      "gpu_device": "cuda:4"
-    }
-  }'
+  -F token=your-trigger-token \
+  -F ref=main \
+  -F "variables[GPU_DEVICE]=cuda:4" \
+  -F "variables[ENVIRONMENT]=production" \
+  http://gitlab.sensedeal.wiki:8060/api/v4/projects/ketd%2Fsensevoice/trigger/pipeline
 ```
 
 ## 📊 部署状态监控

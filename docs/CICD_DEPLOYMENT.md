@@ -1,12 +1,12 @@
 # SenseVoice CI/CD 部署指南
 
-本文档详细说明如何设置 GitHub Actions CI/CD 流水线，实现 SenseVoice 项目的自动化部署到 GPU 服务器。
+本文档详细说明如何设置 GitLab CI/CD 流水线，实现 SenseVoice 项目的自动化部署到 GPU 服务器。
 
 ## 📋 目录
 
 - [部署架构](#部署架构)
 - [服务器准备](#服务器准备)
-- [GitHub 配置](#github-配置)
+- [GitLab 配置](#gitlab-配置)
 - [部署流程](#部署流程)
 - [监控和维护](#监控和维护)
 - [故障排除](#故障排除)
@@ -14,9 +14,9 @@
 ## 🏗️ 部署架构
 
 ```
-GitHub Repository
+GitLab Repository
        ↓
-GitHub Actions CI/CD
+GitLab CI/CD Pipeline
        ↓
 Docker Build & Test
        ↓
@@ -340,7 +340,7 @@ docker-compose up -d
 
 如果遇到问题，请：
 
-1. 查看 [GitHub Issues](https://github.com/your-username/SenseVoice/issues)
+1. 查看 [GitLab Issues](http://gitlab.sensedeal.wiki:8060/ketd/sensevoice/-/issues)
 2. 检查服务日志和系统状态
 3. 参考本文档的故障排除部分
 4. 提交新的 Issue 并附上详细的错误信息

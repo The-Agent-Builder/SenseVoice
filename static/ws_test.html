@@ -557,7 +557,7 @@
                         }
                     });
 
-                    // 使用MediaRecorder直接录制Opus格式
+                    // 使用MediaRecorder录制WebM格式（内含Opus编码）
                     this.mediaRecorder = new MediaRecorder(this.stream, {
                         mimeType: 'audio/webm;codecs=opus',
                         audioBitsPerSecond: 64000 // 64kbps对语音来说足够了
@@ -576,7 +576,7 @@
                     this.mediaRecorder.onstop = () => {
                         if (this.audioChunks.length > 0) {
                             const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm;codecs=opus' });
-                            this.processOpusAudio(audioBlob);
+                            this.processWebMAudio(audioBlob);
                             this.audioChunks = [];
                         }
                     };
@@ -604,7 +604,7 @@
                     this.isRecording = true;
                     this.elements.startRecordBtn.disabled = true;
                     this.elements.stopRecordBtn.disabled = false;
-                    this.log('开始录音（Opus格式）');
+                    this.log('开始录音（WebM格式）');
                     this.startVisualization();
 
                 } catch (error) {
@@ -643,25 +643,7 @@
                 this.stopVisualization();
             }
 
-            async processOpusAudio(audioBlob) {
-                try {
-                    const arrayBuffer = await audioBlob.arrayBuffer();
-                    const base64Data = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
-
-                    this.sendMessage({
-                        type: 'audio',
-                        data: base64Data,
-                        format: 'opus'
-                    });
-
-                } catch (error) {
-                    this.log(`Opus音频处理失败: ${error.message}`);
-                    this.stats.errorCount++;
-                    this.updateStats();
-                }
-            }
-
-            async processAudioData(audioBlob) {
+            async processWebMAudio(audioBlob) {
                 try {
                     const arrayBuffer = await audioBlob.arrayBuffer();
                     const base64Data = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
@@ -673,11 +655,13 @@
                     });
 
                 } catch (error) {
-                    this.log(`音频处理失败: ${error.message}`);
+                    this.log(`WebM音频处理失败: ${error.message}`);
                     this.stats.errorCount++;
                     this.updateStats();
                 }
             }
+
+
 
             handleFileSelection(event) {
                 const file = event.target.files[0];
@@ -1014,7 +998,7 @@
                                 this.sendMessage({
                                     type: 'audio',
                                     data: base64Data,
-                                    format: 'opus'
+                                    format: 'webm'
                                 });
                             }
                             
@@ -1085,10 +1069,10 @@
                     this.sendMessage({
                         type: 'audio',
                         data: base64Data,
-                        format: 'opus'
+                        format: 'webm'
                     });
 
-                    this.log(`上传文件: ${file.name} (假设为Opus格式)`);
+                    this.log(`上传文件: ${file.name} (转换为WebM格式)`);
 
                 } catch (error) {
                     this.log(`文件上传失败: ${error.message}`);

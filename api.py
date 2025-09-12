@@ -144,7 +144,7 @@ async def get_status():
 
 @app.post("/api/v1/asr")
 async def turn_audio_to_text(
-    files: Annotated[List[UploadFile], File(description="wav or mp3 audios in 16KHz")],
+    files: Annotated[List[UploadFile], File(description="WebM audio files (recommended) or other audio formats in 16KHz")],
     keys: Annotated[str, Form(description="name of each audio joined with comma")] = None,
     lang: Annotated[Language, Form(description="language of audio content")] = "auto",
 ):

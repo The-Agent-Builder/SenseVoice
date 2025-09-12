@@ -49,8 +49,8 @@ SenseVoice/
 
 ```bash
 # 克隆仓库
-git clone <repository-url>
-cd SenseVoice
+git clone http://gitlab.sensedeal.wiki:8060/ketd/sensevoice.git
+cd sensevoice
 
 # 运行自动安装脚本
 ./install_gpu.sh
@@ -154,9 +154,9 @@ curl http://localhost:50000/health
 #### 发送音频
 ```json
 {
-  "type": "audio", 
-  "data": "base64_encoded_audio_data",
-  "format": "opus"
+  "type": "audio",
+  "data": "base64_encoded_webm_audio_data",
+  "format": "webm"
 }
 ```
 
@@ -175,9 +175,10 @@ curl http://localhost:50000/health
 
 ## 🎯 支持的音频格式
 
-- **实时录音**: Opus (WebM 容器)
-- **文件上传**: MP3, M4A, WAV, FLAC, OGG 等常见格式
+- **WebSocket 实时流**: WebM 容器格式（内含 Opus 编码）
+- **HTTP 文件上传**: MP3, M4A, WAV, FLAC, OGG 等常见格式
 - **采样率**: 自动转换为 16kHz 单声道
+- **推荐格式**: WebM 格式具有最佳的实时性能和压缩效率
 
 ## 🔧 部署选项
 
