@@ -11,16 +11,20 @@ variables:
   DEPLOY_PATH: "/opt/sensevoice"
   DOCKER_DRIVER: overlay2
   DOCKER_TLS_CERTDIR: ""
+  # 使用阿里云镜像源加速
+  DOCKER_REGISTRY_MIRROR: "https://registry.cn-hangzhou.aliyuncs.com"
+  PIP_INDEX_URL: "https://pypi.tuna.tsinghua.edu.cn/simple"
+  PIP_TRUSTED_HOST: "pypi.tuna.tsinghua.edu.cn"
 
 # 代码质量检查和测试
 code_quality:
   stage: test
-  image: python:3.11-slim
+  image: registry.cn-hangzhou.aliyuncs.com/library/python:3.11-slim
   before_script:
     - apt-get update -qq && apt-get install -y -qq curl
-    - pip install --upgrade pip
-    - pip install -r requirements.txt
-    - pip install flake8 pytest
+    - pip install --upgrade pip -i https://pypi.tuna.tsinghua.edu.cn/simple
+    - pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+    - pip install flake8 pytest -i https://pypi.tuna.tsinghua.edu.cn/simple
   script:
     # 代码风格检查
     - flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
@@ -37,14 +41,40 @@ code_quality:
     - if: $CI_MERGE_REQUEST_ID
     - if: $CI_PIPELINE_SOURCE == "web"
 
+# 简化的语法检查（备用方案）
+syntax_check:
+  stage: test
+  image: registry.cn-hangzhou.aliyuncs.com/library/python:3.11-alpine
+  before_script:
+    - apk add --no-cache curl
+    - pip install --upgrade pip -i $PIP_INDEX_URL
+  script:
+    # 基础语法检查
+    - python -m py_compile main.py
+    - python -m py_compile config/settings.py
+    - python -m py_compile handlers/audio_handler.py
+    - echo "语法检查通过"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "web" && $FORCE_DEPLOY == "true"
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+      allow_failure: true
+    - if: $CI_COMMIT_BRANCH == "develop"
+      when: manual
+      allow_failure: true
+
 # Docker 镜像构建
 build_images:
   stage: build
-  image: docker:24.0.5
+  image: registry.cn-hangzhou.aliyuncs.com/library/docker:24.0.5
   services:
-    - docker:24.0.5-dind
+    - name: registry.cn-hangzhou.aliyuncs.com/library/docker:24.0.5-dind
+      alias: docker
   before_script:
     - docker info
+    # 配置 Docker 镜像源
+    - mkdir -p /etc/docker
+    - echo '{"registry-mirrors":["https://registry.cn-hangzhou.aliyuncs.com","https://docker.mirrors.ustc.edu.cn"]}' > /etc/docker/daemon.json || true
   script:
     # 构建 GPU 版本
     - echo "构建 GPU Docker 镜像..."
@@ -80,7 +110,7 @@ build_images:
 # 部署到生产服务器
 deploy_production:
   stage: deploy
-  image: alpine:latest
+  image: registry.cn-hangzhou.aliyuncs.com/library/alpine:latest
   before_script:
     # 安装必要工具
     - apk add --no-cache openssh-client curl bash
