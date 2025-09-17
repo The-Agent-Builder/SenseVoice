@@ -1,14 +1,16 @@
 # SenseVoice API Docker 镜像
 # 默认CPU版本，通过构建参数支持GPU
 
-FROM hub.sensedeal.vip/library/python:3.10
+FROM hub.sensedeal.vip/library/ubuntu-python-base:22.04-20240612
 
 # 设置工作目录
 WORKDIR /app
 
-# 配置 APT 使用清华源
-RUN sed -i 's|http://deb.debian.org|https://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list && \
-    sed -i 's|http://security.debian.org|https://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list
+# ubuntu-python-base 镜像应该已经配置好了源，但为了保险起见仍然配置
+RUN if [ -f /etc/apt/sources.list ]; then \
+        sed -i 's|http://archive.ubuntu.com|https://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list && \
+        sed -i 's|http://security.ubuntu.com|https://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list; \
+    fi
 
 # 安装系统依赖
 RUN apt-get update && apt-get install -y \

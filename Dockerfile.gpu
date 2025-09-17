@@ -2,7 +2,7 @@
 # 专用于 NVIDIA GPU 环境
 # 支持 CUDA 12.8 (使用 PyTorch cu121 版本，向后兼容)
 
-FROM hub.sensedeal.vip/library/ubuntu:22.04
+FROM hub.sensedeal.vip/library/ubuntu-python-base:22.04-20240612
 
 # 设置时区和语言环境
 ENV DEBIAN_FRONTEND=noninteractive
@@ -13,24 +13,20 @@ ENV LANG=C.UTF-8
 ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
-# 配置 APT 使用清华源
-RUN sed -i 's|http://deb.debian.org|https://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list && \
-    sed -i 's|http://security.debian.org|https://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list
+# ubuntu-python-base 镜像应该已经配置好了源和Python，但为了保险起见仍然配置
+RUN if [ -f /etc/apt/sources.list ]; then \
+        sed -i 's|http://archive.ubuntu.com|https://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list && \
+        sed -i 's|http://security.ubuntu.com|https://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list; \
+    fi
 
-# 安装系统依赖
+# 安装额外的系统依赖 (Python应该已经安装)
 RUN apt-get update && apt-get install -y \
-    python3 \
-    python3-pip \
-    python3-dev \
     build-essential \
     curl \
     git \
     ffmpeg \
     libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
-
-# 创建符号链接
-RUN ln -s /usr/bin/python3 /usr/bin/python
 
 # 设置工作目录
 WORKDIR /app
