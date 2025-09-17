@@ -13,6 +13,8 @@ variables:
   # 内网 Docker 仓库配置
   DOCKER_REGISTRY: "hub.sensedeal.vip"
   DOCKER_IMAGE_TAG: "${CI_COMMIT_SHORT_SHA}"
+  # 部署配置
+  DEPLOY_PATH: "/opt/sensevoice"
 
 
 
@@ -68,147 +70,112 @@ build_images:
     - if: $CI_COMMIT_TAG =~ /^v.*/
     - if: $CI_PIPELINE_SOURCE == "web"
 
-# 备用构建方案（使用 Kaniko，无需 Docker daemon）
-build_images_kaniko:
-  stage: build
-  image:
-    name: gcr.io/kaniko-project/executor:debug
-    entrypoint: [""]
-  before_script:
-    # 配置 Kaniko 认证
-    - mkdir -p /kaniko/.docker
-    - echo "{\"auths\":{\"$DOCKER_REGISTRY\":{\"username\":\"$CI_REGISTRY_USER\",\"password\":\"$CI_REGISTRY_PASSWORD\"}}}" > /kaniko/.docker/config.json
-  script:
-    # 构建 GPU 版本
-    - /kaniko/executor
-      --context $CI_PROJECT_DIR
-      --dockerfile $CI_PROJECT_DIR/Dockerfile.gpu
-      --destination $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:gpu-$DOCKER_IMAGE_TAG
-      --destination $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:gpu-latest
-      --cache=true
-      --cache-repo=$DOCKER_REGISTRY/$DOCKER_IMAGE_NAME/cache
 
-    # 构建 CPU 版本
-    - /kaniko/executor
-      --context $CI_PROJECT_DIR
-      --dockerfile $CI_PROJECT_DIR/Dockerfile
-      --destination $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:cpu-$DOCKER_IMAGE_TAG
-      --destination $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:cpu-latest
-      --cache=true
-      --cache-repo=$DOCKER_REGISTRY/$DOCKER_IMAGE_NAME/cache
-  rules:
-    - if: $CI_COMMIT_BRANCH == "main"
-      when: manual
-      allow_failure: false
-    - if: $CI_COMMIT_TAG =~ /^v.*/
-      when: manual
-      allow_failure: false
-    - if: $CI_PIPELINE_SOURCE == "web"
-      when: manual
-      allow_failure: false
 
-# 直接部署到 Docker（无需服务器）
-deploy_docker:
+# SSH 部署到服务器
+deploy_production:
   stage: deploy
-  image: ${DOCKER_REGISTRY}/library/ubuntu-python-base:22.04-20240612
+  image: alpine:latest
   before_script:
     # 安装必要工具
-    - apt-get update -qq && apt-get install -y -qq curl
+    - apk add --no-cache openssh-client curl bash
+    - eval $(ssh-agent -s)
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - ssh-keyscan -H $SERVER_HOST >> ~/.ssh/known_hosts
+    - chmod 644 ~/.ssh/known_hosts
   script:
-    # 显示构建信息
-    - echo "=== 构建完成 ==="
-    - echo "镜像已推送到内网仓库:" $DOCKER_REGISTRY
+    # 传输文件到服务器
+    - echo "传输文件到服务器..."
+    - scp -P $SERVER_PORT sensevoice-gpu-latest.tar.gz sensevoice-cpu-latest.tar.gz docker-compose.yml .env.example $SERVER_USER@$SERVER_HOST:$DEPLOY_PATH/temp/
 
-    # 创建部署配置
-    - echo "创建部署配置..."
+    # 执行部署脚本
     - |
-      cat > docker-compose.deploy.yml << EOF
-      version: '3.8'
-      services:
-        sensevoice-gpu:
-          image: $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:gpu-latest
-          ports:
-            - "50000:50000"
-          environment:
-            - SENSEVOICE_DEVICE=${GPU_DEVICE:-cuda}
-            - SENSEVOICE_HOST=0.0.0.0
-            - SENSEVOICE_PORT=50000
-            - SENSEVOICE_LOG_LEVEL=INFO
-          deploy:
-            resources:
-              reservations:
-                devices:
-                  - driver: nvidia
-                    count: 1
-                    capabilities: [gpu]
-          restart: unless-stopped
-          healthcheck:
-            test: ["CMD", "curl", "-f", "http://localhost:50000/health"]
-            interval: 30s
-            timeout: 10s
-            retries: 3
-            start_period: 60s
+      ssh -p $SERVER_PORT $SERVER_USER@$SERVER_HOST << 'EOF'
+        set -e
 
-        sensevoice-cpu:
-          image: $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:cpu-latest
-          ports:
-            - "50001:50000"
-          environment:
-            - SENSEVOICE_DEVICE=cpu
-            - SENSEVOICE_HOST=0.0.0.0
-            - SENSEVOICE_PORT=50000
-            - SENSEVOICE_LOG_LEVEL=INFO
-          restart: unless-stopped
-          healthcheck:
-            test: ["CMD", "curl", "-f", "http://localhost:50000/health"]
-            interval: 30s
-            timeout: 10s
-            retries: 3
-            start_period: 60s
-          profiles:
-            - cpu
+        # 进入部署目录
+        cd $DEPLOY_PATH
+
+        # 创建备份
+        if [ -f docker-compose.yml ]; then
+          echo "创建备份..."
+          sudo docker-compose down || true
+          cp docker-compose.yml docker-compose.yml.backup.$(date +%Y%m%d_%H%M%S) || true
+        fi
+
+        # 复制新文件
+        cp temp/docker-compose.yml .
+        cp temp/.env.example .env
+
+        # 设置GPU设备（如果手动指定）
+        if [ "${GPU_DEVICE:-auto}" != "auto" ]; then
+          echo "SENSEVOICE_DEVICE=${GPU_DEVICE}" >> .env
+          echo "手动设置GPU设备: ${GPU_DEVICE}"
+        fi
+
+        # 登录内网Docker仓库
+        echo "登录内网Docker仓库..."
+        echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $DOCKER_REGISTRY
+
+        # 拉取最新镜像
+        echo "拉取最新镜像..."
+        docker pull $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:gpu-latest
+        docker pull $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:cpu-latest
+
+        # 清理旧镜像
+        echo "清理旧镜像..."
+        docker image prune -f || true
+
+        # 启动服务
+        echo "启动服务..."
+        docker-compose up -d
+
+        # 等待服务启动
+        echo "等待服务启动..."
+        sleep 30
+
+        # 健康检查
+        echo "执行健康检查..."
+        for i in {1..10}; do
+          if curl -f http://localhost:50000/health; then
+            echo "服务健康检查通过!"
+            break
+          fi
+          echo "健康检查尝试 $i 失败，10秒后重试..."
+          sleep 10
+        done
+
+        # 清理临时文件
+        rm -rf temp/
+
+        echo "部署完成!"
       EOF
-
-    # 显示部署信息
-    - echo "=== 部署信息 ==="
-    - echo "GPU 镜像:" $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:gpu-latest
-    - echo "CPU 镜像:" $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:cpu-latest
-    - echo "部署配置:" docker-compose.deploy.yml
-    - echo ""
-    - echo "=== 部署命令 ==="
-    - echo "# GPU 版本部署:"
-    - echo "docker-compose -f docker-compose.deploy.yml up -d sensevoice-gpu"
-    - echo ""
-    - echo "# CPU 版本部署:"
-    - echo "docker-compose -f docker-compose.deploy.yml --profile cpu up -d sensevoice-cpu"
-    - echo ""
-    - echo "# 查看服务状态:"
-    - echo "docker-compose -f docker-compose.deploy.yml ps"
-    - echo ""
-    - echo "# 查看日志:"
-    - echo "docker-compose -f docker-compose.deploy.yml logs -f"
   after_script:
-    # 显示部署完成信息
-    - echo "=== 部署配置已生成 ==="
-    - echo "请下载 docker-compose.deploy.yml 文件进行部署"
-    - echo "仓库地址:" $DOCKER_REGISTRY
+    # 显示部署状态
+    - |
+      ssh -p $SERVER_PORT $SERVER_USER@$SERVER_HOST << 'EOF'
+        cd $DEPLOY_PATH
+        echo "=== 部署状态 ==="
+        docker-compose ps
+        echo "=== 服务日志 (最近20行) ==="
+        docker-compose logs --tail=20 sensevoice
+      EOF
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
     - if: $CI_COMMIT_TAG =~ /^v.*/
     - if: $CI_PIPELINE_SOURCE == "web"
   needs:
     - job: build_images
-      optional: true
-    - job: build_images_kaniko
-      optional: true
   environment:
-    name: docker-registry
-    url: https://$DOCKER_REGISTRY
+    name: production
+    url: http://$SERVER_HOST:50000
 
 # 手动触发部署
 manual_deploy:
   stage: deploy
-  extends: deploy_docker
+  extends: deploy_production
   rules:
     - if: $CI_PIPELINE_SOURCE == "web"
       when: manual
