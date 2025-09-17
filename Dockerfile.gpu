@@ -1,7 +1,7 @@
 # SenseVoice API GPU Docker 镜像
 # 专用于 NVIDIA GPU 环境
 
-FROM nvidia/cuda:12.1-runtime-ubuntu22.04
+FROM hub.sensedeal.vip/library/nvidia/cuda:12.1-runtime-ubuntu22.04
 
 # 设置时区和语言环境
 ENV DEBIAN_FRONTEND=noninteractive

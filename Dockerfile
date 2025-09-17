@@ -1,7 +1,7 @@
 # SenseVoice API Docker 镜像
 # 默认CPU版本，通过构建参数支持GPU
 
-FROM python:3.11-slim
+FROM hub.sensedeal.vip/library/python:3.11-slim
 
 # 设置工作目录
 WORKDIR /app

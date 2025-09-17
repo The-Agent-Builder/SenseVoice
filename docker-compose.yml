@@ -65,7 +65,7 @@ services:
 
   # Nginx 反向代理（可选）
   nginx:
-    image: nginx:alpine
+    image: hub.sensedeal.vip/library/nginx:alpine
     ports:
       - "80:80"
       - "443:443"
