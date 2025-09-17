@@ -178,6 +178,8 @@ chmod 600 ~/.ssh/id_rsa
 - Docker 构建超时
 - 依赖安装失败
 - 内存不足
+- Docker socket 被占用
+- 镜像拉取失败
 
 ### 解决方案
 
@@ -207,19 +209,38 @@ build_images:
     - docker save -o .docker-cache/cache.tar $DOCKER_IMAGE_NAME:latest || true
 ```
 
-#### 3. 分阶段构建
+#### 3. Docker Socket 问题
+
+**症状**: `can't create unix socket /var/run/docker.sock: device or resource busy`
+
+**解决方案**:
+```yaml
+# 使用 TCP 连接而不是 Unix socket
+variables:
+  DOCKER_HOST: tcp://docker:2376
+  DOCKER_TLS_CERTDIR: ""
+
+# 添加等待逻辑
+before_script:
+  - sleep 10
+  - until docker info; do echo "等待 Docker 服务启动..."; sleep 5; done
+```
+
+#### 4. 使用 Kaniko 备用方案
+
+如果 Docker-in-Docker 有问题，可以使用 Kaniko：
 
 ```yaml
-# 分别构建 GPU 和 CPU 版本
-build_gpu:
+build_images_kaniko:
   stage: build
+  image:
+    name: gcr.io/kaniko-project/executor:debug
+    entrypoint: [""]
   script:
-    - docker build -f Dockerfile.gpu -t $DOCKER_IMAGE_NAME:gpu-latest .
-
-build_cpu:
-  stage: build
-  script:
-    - docker build -f Dockerfile -t $DOCKER_IMAGE_NAME:cpu-latest .
+    - /kaniko/executor
+      --context $CI_PROJECT_DIR
+      --dockerfile $CI_PROJECT_DIR/Dockerfile.gpu
+      --destination $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:gpu-latest
 ```
 
 ## 🚀 部署失败

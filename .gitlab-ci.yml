@@ -9,6 +9,7 @@ variables:
   DOCKER_IMAGE_NAME: "sensevoice"
   DOCKER_DRIVER: overlay2
   DOCKER_TLS_CERTDIR: ""
+  DOCKER_HOST: tcp://docker:2376
   # 内网 Docker 仓库配置
   DOCKER_REGISTRY: "hub.sensedeal.vip"
   DOCKER_IMAGE_TAG: "${CI_COMMIT_SHORT_SHA}"
@@ -18,11 +19,14 @@ variables:
 # Docker 镜像构建
 build_images:
   stage: build
-  image: ${DOCKER_REGISTRY}/library/docker:27.3.1
+  image: docker:24.0.5
   services:
-    - name: ${DOCKER_REGISTRY}/library/docker:27.3.1-dind
+    - name: docker:24.0.5-dind
       alias: docker
   before_script:
+    # 等待 Docker 服务启动
+    - sleep 10
+    - until docker info; do echo "等待 Docker 服务启动..."; sleep 5; done
     # 登录内网 Docker 仓库
     - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $DOCKER_REGISTRY
     - docker info
@@ -63,6 +67,45 @@ build_images:
     - if: $CI_COMMIT_BRANCH == "main"
     - if: $CI_COMMIT_TAG =~ /^v.*/
     - if: $CI_PIPELINE_SOURCE == "web"
+
+# 备用构建方案（使用 Kaniko，无需 Docker daemon）
+build_images_kaniko:
+  stage: build
+  image:
+    name: gcr.io/kaniko-project/executor:debug
+    entrypoint: [""]
+  before_script:
+    # 配置 Kaniko 认证
+    - mkdir -p /kaniko/.docker
+    - echo "{\"auths\":{\"$DOCKER_REGISTRY\":{\"username\":\"$CI_REGISTRY_USER\",\"password\":\"$CI_REGISTRY_PASSWORD\"}}}" > /kaniko/.docker/config.json
+  script:
+    # 构建 GPU 版本
+    - /kaniko/executor
+      --context $CI_PROJECT_DIR
+      --dockerfile $CI_PROJECT_DIR/Dockerfile.gpu
+      --destination $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:gpu-$DOCKER_IMAGE_TAG
+      --destination $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:gpu-latest
+      --cache=true
+      --cache-repo=$DOCKER_REGISTRY/$DOCKER_IMAGE_NAME/cache
+
+    # 构建 CPU 版本
+    - /kaniko/executor
+      --context $CI_PROJECT_DIR
+      --dockerfile $CI_PROJECT_DIR/Dockerfile
+      --destination $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:cpu-$DOCKER_IMAGE_TAG
+      --destination $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:cpu-latest
+      --cache=true
+      --cache-repo=$DOCKER_REGISTRY/$DOCKER_IMAGE_NAME/cache
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+      allow_failure: false
+    - if: $CI_COMMIT_TAG =~ /^v.*/
+      when: manual
+      allow_failure: false
+    - if: $CI_PIPELINE_SOURCE == "web"
+      when: manual
+      allow_failure: false
 
 # 直接部署到 Docker（无需服务器）
 deploy_docker:
@@ -155,6 +198,9 @@ deploy_docker:
     - if: $CI_PIPELINE_SOURCE == "web"
   needs:
     - job: build_images
+      optional: true
+    - job: build_images_kaniko
+      optional: true
   environment:
     name: docker-registry
     url: https://$DOCKER_REGISTRY
