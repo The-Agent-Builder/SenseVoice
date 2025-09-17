@@ -26,6 +26,10 @@ COPY websocket/ ./websocket/
 COPY static/ ./static/
 COPY .env.example .env
 
+# 配置 pip 使用清华源
+RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \
+    pip config set global.trusted-host pypi.tuna.tsinghua.edu.cn
+
 # 安装 Python 依赖
 # 默认安装 CPU 版本，GPU 版本通过构建参数控制
 ARG PYTORCH_INDEX_URL="https://download.pytorch.org/whl/cpu"

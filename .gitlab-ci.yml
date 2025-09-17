@@ -13,6 +13,9 @@ variables:
   IMAGE_TAG: "${CI_COMMIT_SHORT_SHA}"
   DOCKER_DRIVER: overlay2
   DOCKER_TLS_CERTDIR: ""
+  # Python 包源配置
+  PIP_INDEX_URL: "https://pypi.tuna.tsinghua.edu.cn/simple"
+  PIP_TRUSTED_HOST: "pypi.tuna.tsinghua.edu.cn"
   # 部署配置
   DEPLOY_PATH: "/opt/sensevoice"
 
@@ -21,8 +24,8 @@ test:
   stage: test
   image: ${DOCKER_REGISTRY}/library/ubuntu-python-base:22.04-20240612
   before_script:
-    - pip3 install --upgrade pip
-    - pip3 install -r requirements.txt
+    - pip3 install --upgrade pip -i $PIP_INDEX_URL --trusted-host $PIP_TRUSTED_HOST
+    - pip3 install -r requirements.txt -i $PIP_INDEX_URL --trusted-host $PIP_TRUSTED_HOST
   script:
     - echo "运行代码语法检查..."
     - python3 -m py_compile main.py
