@@ -2,58 +2,85 @@
 # 支持代码质量检查、Docker构建和自动部署
 
 stages:
+  - test
   - build
   - deploy
 
 variables:
+  DOCKER_REGISTRY: "hub.sensedeal.vip"
   DOCKER_IMAGE_NAME: "sensevoice"
+  IMAGE_NAME: "${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}"
+  IMAGE_TAG: "${CI_COMMIT_SHORT_SHA}"
   DOCKER_DRIVER: overlay2
   DOCKER_TLS_CERTDIR: ""
-  DOCKER_HOST: tcp://docker:2376
-  # 内网 Docker 仓库配置
-  DOCKER_REGISTRY: "hub.sensedeal.vip"
-  DOCKER_IMAGE_TAG: "${CI_COMMIT_SHORT_SHA}"
   # 部署配置
   DEPLOY_PATH: "/opt/sensevoice"
 
-
+# 测试阶段
+test:
+  stage: test
+  image: ${DOCKER_REGISTRY}/library/ubuntu-python-base:22.04-20240612
+  before_script:
+    - pip3 install --upgrade pip
+    - pip3 install -r requirements.txt
+  script:
+    - echo "运行代码语法检查..."
+    - python3 -m py_compile main.py
+    - python3 -m py_compile config/settings.py
+    - python3 -m py_compile handlers/audio_handler.py
+    - python3 -m py_compile models/sense_voice_model.py
+    - python3 -m py_compile websocket/connection_manager.py
+    - echo "代码语法检查通过"
+    - echo "检查项目结构..."
+    - ls -la
+    - echo "检查必要文件..."
+    - test -f requirements.txt && echo "✅ requirements.txt 存在"
+    - test -f Dockerfile && echo "✅ Dockerfile 存在"
+    - test -f Dockerfile.gpu && echo "✅ Dockerfile.gpu 存在"
+    - test -f docker-compose.yml && echo "✅ docker-compose.yml 存在"
+    - test -d config && echo "✅ config 目录存在"
+    - test -d handlers && echo "✅ handlers 目录存在"
+    - test -d models && echo "✅ models 目录存在"
+    - test -d websocket && echo "✅ websocket 目录存在"
+    - echo "基础测试通过"
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "develop"
+    - if: $CI_MERGE_REQUEST_ID
 
 # Docker 镜像构建
-build_images:
+build:
   stage: build
-  image: docker:24.0.5
-  services:
-    - name: docker:24.0.5-dind
-      alias: docker
+  image: ${DOCKER_REGISTRY}/library/docker:27.3.1-dind
+  variables:
+    DOCKER_TLS_CERTDIR: ""
+    DOCKER_DRIVER: overlay2
   before_script:
-    # 等待 Docker 服务启动
-    - sleep 10
-    - until docker info; do echo "等待 Docker 服务启动..."; sleep 5; done
-    # 登录内网 Docker 仓库
-    - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $DOCKER_REGISTRY
-    - docker info
+    - export DOCKER_CONFIG=/tmp/.docker
+    - mkdir -p $DOCKER_CONFIG
+    - echo "{\"auths\":{\"$DOCKER_REGISTRY\":{\"username\":\"$CI_REGISTRY_USER\",\"password\":\"$CI_REGISTRY_PASSWORD\"}}}" > $DOCKER_CONFIG/config.json
   script:
     # 构建 GPU 版本
     - echo "构建 GPU Docker 镜像..."
-    - docker build -f Dockerfile.gpu -t $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:gpu-$DOCKER_IMAGE_TAG .
-    - docker build -f Dockerfile.gpu -t $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:gpu-latest .
+    - docker build -f Dockerfile.gpu -t ${IMAGE_NAME}:gpu-${IMAGE_TAG} .
+    - docker build -f Dockerfile.gpu -t ${IMAGE_NAME}:gpu-latest .
 
     # 构建 CPU 版本
     - echo "构建 CPU Docker 镜像..."
-    - docker build -f Dockerfile -t $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:cpu-$DOCKER_IMAGE_TAG .
-    - docker build -f Dockerfile -t $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:cpu-latest .
+    - docker build -f Dockerfile -t ${IMAGE_NAME}:cpu-${IMAGE_TAG} .
+    - docker build -f Dockerfile -t ${IMAGE_NAME}:cpu-latest .
 
     # 推送镜像到内网仓库
     - echo "推送镜像到内网仓库..."
-    - docker push $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:gpu-$DOCKER_IMAGE_TAG
-    - docker push $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:gpu-latest
-    - docker push $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:cpu-$DOCKER_IMAGE_TAG
-    - docker push $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:cpu-latest
+    - docker push ${IMAGE_NAME}:gpu-${IMAGE_TAG}
+    - docker push ${IMAGE_NAME}:gpu-latest
+    - docker push ${IMAGE_NAME}:cpu-${IMAGE_TAG}
+    - docker push ${IMAGE_NAME}:cpu-latest
 
     # 保存镜像文件（用于直接部署）
     - echo "保存 Docker 镜像文件..."
-    - docker save $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:gpu-latest | gzip > sensevoice-gpu-latest.tar.gz
-    - docker save $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:cpu-latest | gzip > sensevoice-cpu-latest.tar.gz
+    - docker save ${IMAGE_NAME}:gpu-latest | gzip > sensevoice-gpu-latest.tar.gz
+    - docker save ${IMAGE_NAME}:cpu-latest | gzip > sensevoice-cpu-latest.tar.gz
 
     # 清理构建缓存
     - docker system prune -f
@@ -67,18 +94,17 @@ build_images:
     expire_in: 1 hour
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
-    - if: $CI_COMMIT_TAG =~ /^v.*/
-    - if: $CI_PIPELINE_SOURCE == "web"
+    - if: $CI_COMMIT_BRANCH == "develop"
 
 
 
 # SSH 部署到服务器
 deploy_production:
   stage: deploy
-  image: alpine:latest
+  image: ${DOCKER_REGISTRY}/library/ubuntu-python-base:22.04-20240612
   before_script:
     # 安装必要工具
-    - apk add --no-cache openssh-client curl bash
+    - apt-get update -qq && apt-get install -y -qq openssh-client curl bash
     - eval $(ssh-agent -s)
     - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
     - mkdir -p ~/.ssh
@@ -121,8 +147,8 @@ deploy_production:
 
         # 拉取最新镜像
         echo "拉取最新镜像..."
-        docker pull $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:gpu-latest
-        docker pull $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:cpu-latest
+        docker pull ${IMAGE_NAME}:gpu-latest
+        docker pull ${IMAGE_NAME}:cpu-latest
 
         # 清理旧镜像
         echo "清理旧镜像..."
@@ -167,7 +193,7 @@ deploy_production:
     - if: $CI_COMMIT_TAG =~ /^v.*/
     - if: $CI_PIPELINE_SOURCE == "web"
   needs:
-    - job: build_images
+    - job: build
   environment:
     name: production
     url: http://$SERVER_HOST:50000
