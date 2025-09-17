@@ -6,6 +6,10 @@ FROM hub.sensedeal.vip/library/python:3.10
 # 设置工作目录
 WORKDIR /app
 
+# 配置 APT 使用清华源
+RUN sed -i 's|http://deb.debian.org|https://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list && \
+    sed -i 's|http://security.debian.org|https://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list
+
 # 安装系统依赖
 RUN apt-get update && apt-get install -y \
     build-essential \
