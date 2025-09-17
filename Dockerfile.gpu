@@ -1,5 +1,6 @@
 # SenseVoice API GPU Docker 镜像
 # 专用于 NVIDIA GPU 环境
+# 支持 CUDA 12.8 (使用 PyTorch cu121 版本，向后兼容)
 
 FROM hub.sensedeal.vip/library/ubuntu:22.04
 
@@ -7,6 +8,10 @@ FROM hub.sensedeal.vip/library/ubuntu:22.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Asia/Shanghai
 ENV LANG=C.UTF-8
+
+# CUDA 环境变量 (支持 CUDA 12.8)
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
 # 安装系统依赖
 RUN apt-get update && apt-get install -y \
@@ -41,7 +46,7 @@ COPY .env.example .env
 RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \
     pip config set global.trusted-host pypi.tuna.tsinghua.edu.cn
 
-# 安装 GPU 版本的 PyTorch (使用官方源，因为清华源可能没有 CUDA 版本)
+# 安装 GPU 版本的 PyTorch (CUDA 12.8 兼容 cu121)
 RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 
 # 安装其他依赖 (使用清华源)
