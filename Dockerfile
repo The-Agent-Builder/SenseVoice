@@ -36,16 +36,30 @@ COPY .env.example .env
 RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \
     pip config set global.trusted-host pypi.tuna.tsinghua.edu.cn
 
-# 安装 Python 依赖
-# 默认安装 CPU 版本，GPU 版本通过构建参数控制
-ARG PYTORCH_INDEX_URL="https://download.pytorch.org/whl/cpu"
-ARG INSTALL_GPU="false"
+# 分层安装依赖以优化构建缓存
+# 1. 先安装基础 Web 框架依赖
+RUN pip install --no-cache-dir \
+    fastapi>=0.111.1 \
+    uvicorn[standard] \
+    python-multipart \
+    websockets \
+    python-dotenv
 
-RUN if [ "$INSTALL_GPU" = "true" ]; then \
-        echo "安装GPU版本PyTorch..." && \
-        pip install torch torchvision torchaudio --index-url ${PYTORCH_INDEX_URL}; \
-    fi && \
-    pip install --no-cache-dir -r requirements.txt
+# 2. 安装数据处理依赖
+RUN pip install --no-cache-dir \
+    "numpy<=2.3.3" \
+    "pydub>=0.25.1"
+
+# 3. 安装 PyTorch CPU 版本 (避免重复安装)
+ARG PYTORCH_INDEX_URL="https://download.pytorch.org/whl/cpu"
+RUN pip install --no-cache-dir torch torchvision torchaudio --index-url ${PYTORCH_INDEX_URL}
+
+# 4. 安装 SenseVoice 相关依赖
+RUN pip install --no-cache-dir \
+    modelscope \
+    huggingface_hub \
+    "funasr>=1.1.3" \
+    gradio
 
 # 创建缓存目录
 RUN mkdir -p /root/.cache/modelscope

@@ -46,11 +46,29 @@ COPY .env.example .env
 RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \
     pip config set global.trusted-host pypi.tuna.tsinghua.edu.cn
 
-# 安装 GPU 版本的 PyTorch (CUDA 12.8 兼容 cu121)
+# 分层安装依赖以优化构建缓存
+# 1. 先安装基础 Web 框架依赖
+RUN pip install --no-cache-dir \
+    fastapi>=0.111.1 \
+    uvicorn[standard] \
+    python-multipart \
+    websockets \
+    python-dotenv
+
+# 2. 安装数据处理依赖
+RUN pip install --no-cache-dir \
+    "numpy<=2.3.3" \
+    "pydub>=0.25.1"
+
+# 3. 安装 GPU 版本的 PyTorch (CUDA 12.8 兼容 cu121)
 RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 
-# 安装其他依赖 (使用清华源)
-RUN pip install --no-cache-dir -r requirements.txt
+# 4. 安装 SenseVoice 相关依赖
+RUN pip install --no-cache-dir \
+    modelscope \
+    huggingface_hub \
+    "funasr>=1.1.3" \
+    gradio
 
 # 创建缓存目录
 RUN mkdir -p /root/.cache/modelscope
