@@ -8,7 +8,7 @@ stages:
 
 variables:
   DOCKER_REGISTRY: "hub.sensedeal.vip"
-  IMAGE_NAME: "${DOCKER_REGISTRY}/ketd/sensevoice"
+  IMAGE_NAME: "${DOCKER_REGISTRY}/library/sensevoice"
   IMAGE_TAG: "${CI_COMMIT_SHORT_SHA}"
   DOCKER_DRIVER: overlay2
   DOCKER_TLS_CERTDIR: ""
