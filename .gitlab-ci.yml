@@ -11,20 +11,24 @@ variables:
   DEPLOY_PATH: "/opt/sensevoice"
   DOCKER_DRIVER: overlay2
   DOCKER_TLS_CERTDIR: ""
-  # 使用阿里云镜像源加速
-  DOCKER_REGISTRY_MIRROR: "https://registry.cn-hangzhou.aliyuncs.com"
+  # 内网 Docker 仓库配置
+  DOCKER_REGISTRY: "hub.sensedeal.vip"
+  DOCKER_IMAGE_TAG: "${CI_COMMIT_SHORT_SHA}"
+  # Python 包源配置
   PIP_INDEX_URL: "https://pypi.tuna.tsinghua.edu.cn/simple"
   PIP_TRUSTED_HOST: "pypi.tuna.tsinghua.edu.cn"
 
 # 代码质量检查和测试
 code_quality:
   stage: test
-  image: registry.cn-hangzhou.aliyuncs.com/library/python:3.11-slim
+  image: ${DOCKER_REGISTRY}/library/ubuntu-python-base:22.04-20240612
   before_script:
+    # 登录内网 Docker 仓库
+    - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $DOCKER_REGISTRY
     - apt-get update -qq && apt-get install -y -qq curl
-    - pip install --upgrade pip -i https://pypi.tuna.tsinghua.edu.cn/simple
-    - pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
-    - pip install flake8 pytest -i https://pypi.tuna.tsinghua.edu.cn/simple
+    - pip install --upgrade pip -i $PIP_INDEX_URL
+    - pip install -r requirements.txt -i $PIP_INDEX_URL
+    - pip install flake8 pytest -i $PIP_INDEX_URL
   script:
     # 代码风格检查
     - flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
@@ -44,9 +48,10 @@ code_quality:
 # 简化的语法检查（备用方案）
 syntax_check:
   stage: test
-  image: registry.cn-hangzhou.aliyuncs.com/library/python:3.11-alpine
+  image: ${DOCKER_REGISTRY}/library/ubuntu-python-base:22.04-20240612
   before_script:
-    - apk add --no-cache curl
+    - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $DOCKER_REGISTRY
+    - apt-get update -qq && apt-get install -y -qq curl
     - pip install --upgrade pip -i $PIP_INDEX_URL
   script:
     # 基础语法检查
@@ -66,36 +71,44 @@ syntax_check:
 # Docker 镜像构建
 build_images:
   stage: build
-  image: registry.cn-hangzhou.aliyuncs.com/library/docker:24.0.5
+  image: ${DOCKER_REGISTRY}/library/docker:27.3.1
   services:
-    - name: registry.cn-hangzhou.aliyuncs.com/library/docker:24.0.5-dind
+    - name: ${DOCKER_REGISTRY}/library/docker:27.3.1-dind
       alias: docker
   before_script:
+    # 登录内网 Docker 仓库
+    - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $DOCKER_REGISTRY
     - docker info
-    # 配置 Docker 镜像源
-    - mkdir -p /etc/docker
-    - echo '{"registry-mirrors":["https://registry.cn-hangzhou.aliyuncs.com","https://docker.mirrors.ustc.edu.cn"]}' > /etc/docker/daemon.json || true
   script:
     # 构建 GPU 版本
     - echo "构建 GPU Docker 镜像..."
-    - docker build -f Dockerfile.gpu -t $DOCKER_IMAGE_NAME:gpu-latest .
-    - docker build -f Dockerfile.gpu -t $DOCKER_IMAGE_NAME:latest .
-    
+    - docker build -f Dockerfile.gpu -t $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:gpu-$DOCKER_IMAGE_TAG .
+    - docker build -f Dockerfile.gpu -t $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:gpu-latest .
+
     # 构建 CPU 版本
     - echo "构建 CPU Docker 镜像..."
-    - docker build -f Dockerfile -t $DOCKER_IMAGE_NAME:cpu-latest .
-    
-    # 保存镜像
-    - echo "保存 Docker 镜像..."
-    - docker save $DOCKER_IMAGE_NAME:latest | gzip > sensevoice-gpu-latest.tar.gz
-    - docker save $DOCKER_IMAGE_NAME:cpu-latest | gzip > sensevoice-cpu-latest.tar.gz
-    
+    - docker build -f Dockerfile -t $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:cpu-$DOCKER_IMAGE_TAG .
+    - docker build -f Dockerfile -t $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:cpu-latest .
+
+    # 推送镜像到内网仓库
+    - echo "推送镜像到内网仓库..."
+    - docker push $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:gpu-$DOCKER_IMAGE_TAG
+    - docker push $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:gpu-latest
+    - docker push $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:cpu-$DOCKER_IMAGE_TAG
+    - docker push $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:cpu-latest
+
+    # 保存镜像文件（用于直接部署）
+    - echo "保存 Docker 镜像文件..."
+    - docker save $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:gpu-latest | gzip > sensevoice-gpu-latest.tar.gz
+    - docker save $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:cpu-latest | gzip > sensevoice-cpu-latest.tar.gz
+
     # 清理构建缓存
     - docker system prune -f
   artifacts:
     paths:
       - sensevoice-gpu-latest.tar.gz
       - sensevoice-cpu-latest.tar.gz
+      - docker-compose.deploy.yml
       - docker-compose.yml
       - .env.example
     expire_in: 1 hour
@@ -107,92 +120,95 @@ build_images:
     - job: code_quality
       optional: true
 
-# 部署到生产服务器
-deploy_production:
+# 直接部署到 Docker（无需服务器）
+deploy_docker:
   stage: deploy
-  image: registry.cn-hangzhou.aliyuncs.com/library/alpine:latest
+  image: ${DOCKER_REGISTRY}/library/ubuntu-python-base:22.04-20240612
   before_script:
-    # 安装必要工具
-    - apk add --no-cache openssh-client curl bash
-    - eval $(ssh-agent -s)
-    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
-    - mkdir -p ~/.ssh
-    - chmod 700 ~/.ssh
-    - ssh-keyscan -H $SERVER_HOST >> ~/.ssh/known_hosts
-    - chmod 644 ~/.ssh/known_hosts
+    # 登录内网 Docker 仓库
+    - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $DOCKER_REGISTRY
+    # 安装 Docker 客户端
+    - apt-get update -qq && apt-get install -y -qq curl docker.io
+    - docker --version
   script:
-    # 传输文件到服务器
-    - echo "传输文件到服务器..."
-    - scp -P $SERVER_PORT sensevoice-gpu-latest.tar.gz sensevoice-cpu-latest.tar.gz docker-compose.yml .env.example $SERVER_USER@$SERVER_HOST:$DEPLOY_PATH/temp/
-    
-    # 执行部署脚本
+    # 验证镜像构建成功
+    - echo "验证镜像构建..."
+    - docker images | grep $DOCKER_IMAGE_NAME
+
+    # 创建部署配置
+    - echo "创建部署配置..."
     - |
-      ssh -p $SERVER_PORT $SERVER_USER@$SERVER_HOST << 'EOF'
-        set -e
-        
-        # 进入部署目录
-        cd $DEPLOY_PATH
-        
-        # 创建备份
-        if [ -f docker-compose.yml ]; then
-          echo "创建备份..."
-          sudo docker-compose down || true
-          cp docker-compose.yml docker-compose.yml.backup.$(date +%Y%m%d_%H%M%S) || true
-        fi
-        
-        # 复制新文件
-        cp temp/docker-compose.yml .
-        cp temp/.env.example .env
-        
-        # 设置GPU设备（如果手动指定）
-        if [ "${GPU_DEVICE:-auto}" != "auto" ]; then
-          echo "SENSEVOICE_DEVICE=${GPU_DEVICE}" >> .env
-          echo "手动设置GPU设备: ${GPU_DEVICE}"
-        fi
-        
-        # 加载新的Docker镜像
-        echo "加载新的Docker镜像..."
-        docker load < temp/sensevoice-gpu-latest.tar.gz
-        docker load < temp/sensevoice-cpu-latest.tar.gz
-        
-        # 清理旧镜像
-        echo "清理旧镜像..."
-        docker image prune -f || true
-        
-        # 启动服务
-        echo "启动服务..."
-        docker-compose up -d
-        
-        # 等待服务启动
-        echo "等待服务启动..."
-        sleep 30
-        
-        # 健康检查
-        echo "执行健康检查..."
-        for i in {1..10}; do
-          if curl -f http://localhost:50000/health; then
-            echo "服务健康检查通过!"
-            break
-          fi
-          echo "健康检查尝试 $i 失败，10秒后重试..."
-          sleep 10
-        done
-        
-        # 清理临时文件
-        rm -rf temp/
-        
-        echo "部署完成!"
+      cat > docker-compose.deploy.yml << EOF
+      version: '3.8'
+      services:
+        sensevoice-gpu:
+          image: $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:gpu-latest
+          ports:
+            - "50000:50000"
+          environment:
+            - SENSEVOICE_DEVICE=${GPU_DEVICE:-cuda}
+            - SENSEVOICE_HOST=0.0.0.0
+            - SENSEVOICE_PORT=50000
+            - SENSEVOICE_LOG_LEVEL=INFO
+          deploy:
+            resources:
+              reservations:
+                devices:
+                  - driver: nvidia
+                    count: 1
+                    capabilities: [gpu]
+          restart: unless-stopped
+          healthcheck:
+            test: ["CMD", "curl", "-f", "http://localhost:50000/health"]
+            interval: 30s
+            timeout: 10s
+            retries: 3
+            start_period: 60s
+
+        sensevoice-cpu:
+          image: $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:cpu-latest
+          ports:
+            - "50001:50000"
+          environment:
+            - SENSEVOICE_DEVICE=cpu
+            - SENSEVOICE_HOST=0.0.0.0
+            - SENSEVOICE_PORT=50000
+            - SENSEVOICE_LOG_LEVEL=INFO
+          restart: unless-stopped
+          healthcheck:
+            test: ["CMD", "curl", "-f", "http://localhost:50000/health"]
+            interval: 30s
+            timeout: 10s
+            retries: 3
+            start_period: 60s
+          profiles:
+            - cpu
       EOF
+
+    # 显示部署信息
+    - echo "=== 部署信息 ==="
+    - echo "GPU 镜像:" $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:gpu-latest
+    - echo "CPU 镜像:" $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:cpu-latest
+    - echo "部署配置:" docker-compose.deploy.yml
+    - echo ""
+    - echo "=== 部署命令 ==="
+    - echo "# GPU 版本部署:"
+    - echo "docker-compose -f docker-compose.deploy.yml up -d sensevoice-gpu"
+    - echo ""
+    - echo "# CPU 版本部署:"
+    - echo "docker-compose -f docker-compose.deploy.yml --profile cpu up -d sensevoice-cpu"
+    - echo ""
+    - echo "# 查看服务状态:"
+    - echo "docker-compose -f docker-compose.deploy.yml ps"
+    - echo ""
+    - echo "# 查看日志:"
+    - echo "docker-compose -f docker-compose.deploy.yml logs -f"
   after_script:
-    # 显示部署状态
-    - |
-      ssh -p $SERVER_PORT $SERVER_USER@$SERVER_HOST << 'EOF'
-        cd $DEPLOY_PATH
-        echo "=== 部署状态 ==="
-        docker-compose ps
-        echo "=== 服务日志 (最近20行) ==="
-        docker-compose logs --tail=20 sensevoice
-      EOF
+    # 显示镜像信息
+    - echo "=== 构建完成的镜像 ==="
+    - docker images | grep $DOCKER_IMAGE_NAME || true
+    - echo "=== 镜像已推送到内网仓库 ==="
+    - echo "仓库地址:" $DOCKER_REGISTRY
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
     - if: $CI_COMMIT_TAG =~ /^v.*/
@@ -200,18 +216,18 @@ deploy_production:
   needs:
     - job: build_images
   environment:
-    name: production
-    url: http://$SERVER_HOST:50000
+    name: docker-registry
+    url: https://$DOCKER_REGISTRY
 
 # 手动触发部署（可选择跳过测试）
 manual_deploy:
   stage: deploy
-  extends: deploy_production
+  extends: deploy_docker
   rules:
     - if: $CI_PIPELINE_SOURCE == "web"
       when: manual
       allow_failure: false
   variables:
     ENVIRONMENT: ${ENVIRONMENT:-production}
-    GPU_DEVICE: ${GPU_DEVICE:-auto}
+    GPU_DEVICE: ${GPU_DEVICE:-cuda}
     FORCE_DEPLOY: ${FORCE_DEPLOY:-false}

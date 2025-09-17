@@ -3,6 +3,7 @@ version: '3.8'
 services:
   # GPU 版本服务（默认）
   sensevoice:
+    image: hub.sensedeal.vip/sensevoice:gpu-latest
     build:
       context: .
       dockerfile: Dockerfile.gpu
@@ -34,6 +35,7 @@ services:
 
   # CPU 版本服务（开发测试用）
   sensevoice-cpu:
+    image: hub.sensedeal.vip/sensevoice:cpu-latest
     build:
       context: .
       dockerfile: Dockerfile
