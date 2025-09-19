@@ -84,8 +84,8 @@ build:
     - docker save ${IMAGE_NAME}:gpu-latest | gzip > sensevoice-gpu-latest.tar.gz
     - docker save ${IMAGE_NAME}:cpu-latest | gzip > sensevoice-cpu-latest.tar.gz
 
-    # 清理构建缓存
-    - docker system prune -f
+    # 清理构建缓存（忽略并发冲突）
+    - docker system prune -f || echo "清理操作被跳过（可能有其他清理操作正在进行）"
   artifacts:
     paths:
       - sensevoice-gpu-latest.tar.gz
