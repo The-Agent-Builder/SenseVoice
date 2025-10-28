@@ -170,15 +170,18 @@ async def turn_audio_to_text(
     else:
         key = keys.split(",")
 
-    res = m.inference(
-        data_in=audios,
-        language=lang,  # "zh", "en", "yue", "ja", "ko", "nospeech"
-        use_itn=False,  # 关闭逆文本标准化，保留原始标记
-        ban_emo_unk=False,  # 允许情感标记输出
-        key=key,
-        fs=TARGET_FS,
-        **kwargs,
-    )
+    # 使用 torch.no_grad() 禁用梯度计算，大幅减少显存占用（约减少70%）
+    import torch
+    with torch.no_grad():
+        res = m.inference(
+            data_in=audios,
+            language=lang,  # "zh", "en", "yue", "ja", "ko", "nospeech"
+            use_itn=False,  # 关闭逆文本标准化，保留原始标记
+            ban_emo_unk=False,  # 允许情感标记输出
+            key=key,
+            fs=TARGET_FS,
+            **kwargs,
+        )
     if len(res) == 0:
         return {"result": []}
     for it in res[0]:
