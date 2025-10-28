@@ -81,6 +81,9 @@ ENV SENSEVOICE_PORT=50000
 ENV SENSEVOICE_LOG_LEVEL=INFO
 ENV PYTHONPATH=/app
 
+# PyTorch CUDA 内存分配优化，避免显存碎片化
+ENV PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+
 # 健康检查
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:${SENSEVOICE_PORT}/health || exit 1

@@ -64,6 +64,10 @@ class SenseVoiceModelManager:
         """设置显存管理"""
         try:
             if self.settings.device.startswith("cuda"):
+                # 设置PyTorch CUDA内存分配器，避免碎片化
+                import os
+                os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+                
                 # 设置具体的GPU设备
                 if ":" in self.settings.device:
                     device_id = int(self.settings.device.split(":")[1])
@@ -73,15 +77,18 @@ class SenseVoiceModelManager:
                 # 清理显存缓存
                 torch.cuda.empty_cache()
 
-                # 设置显存分配策略
-                # 使用更保守的显存分配策略
-                torch.cuda.memory.set_per_process_memory_fraction(0.8)  # 限制使用80%显存
+                # 设置显存分配策略 - 根据GPU显存大小动态调整
+                total_memory = torch.cuda.get_device_properties(self.settings.device).total_memory
+                # 如果显存 > 16GB，可以使用更多；否则限制在90%
+                memory_fraction = 0.95 if total_memory > 16 * 1024**3 else 0.9
+                torch.cuda.memory.set_per_process_memory_fraction(memory_fraction)
+                logger.info(f"设置显存使用上限为 {memory_fraction*100}%")
 
                 # 启用显存回收
                 import gc
                 gc.collect()
 
-                logger.info("显存管理设置完成")
+                logger.info("显存管理设置完成（已启用expandable_segments避免碎片化）")
 
         except Exception as e:
             logger.warning(f"显存管理设置失败: {e}")

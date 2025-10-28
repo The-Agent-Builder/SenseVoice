@@ -6,6 +6,9 @@ import logging
 import os
 import uvicorn
 
+# 在导入PyTorch之前设置CUDA内存分配配置，避免显存碎片化
+os.environ.setdefault('PYTORCH_CUDA_ALLOC_CONF', 'expandable_segments:True')
+
 # 加载 .env 文件
 try:
     from dotenv import load_dotenv
