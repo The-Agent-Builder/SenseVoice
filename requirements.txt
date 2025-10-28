@@ -15,6 +15,9 @@ numpy<=2.3.3
 torch>=2.0.0
 torchaudio>=2.0.0
 
+# GPU显存管理（可选，用于准确检测GPU显存使用情况）
+pynvml
+
 # GPU版本安装说明：
 # 在安装requirements.txt之前，请先单独安装GPU版本的PyTorch：
 # 

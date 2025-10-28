@@ -68,7 +68,8 @@ class Settings:
             if torch.cuda.is_available():
                 gpu_count = torch.cuda.device_count()
                 print(f"检测到 {gpu_count} 个CUDA设备，使用GPU加速")
-                return "cuda"
+                # 自动选择显存使用最少的GPU
+                return self._select_best_gpu()
             elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
                 print("检测到Metal Performance Shaders，使用MPS加速")
                 return "mps"
@@ -82,6 +83,92 @@ class Settings:
         except Exception as e:
             print(f"设备检测异常，使用CPU: {e}")
             return "cpu"
+    
+    def _select_best_gpu(self) -> str:
+        """选择显存使用最少的GPU"""
+        try:
+            import torch
+            
+            gpu_count = torch.cuda.device_count()
+            if gpu_count == 0:
+                print("未检测到可用的GPU，使用CPU")
+                return "cpu"
+            
+            # 优先使用 pynvml 获取准确的显存信息（包括其他进程占用）
+            try:
+                import pynvml
+                pynvml.nvmlInit()
+                use_nvml = True
+            except:
+                use_nvml = False
+                print("注意: pynvml 库不可用，显存检测可能不准确（无法检测其他进程占用）")
+            
+            # 查找显存空闲最多的GPU
+            best_device = 0
+            max_free_memory = 0
+            
+            print("正在检测GPU显存使用情况...")
+            for i in range(gpu_count):
+                try:
+                    if use_nvml:
+                        # 使用 NVML 获取准确的显存信息
+                        handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+                        info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+                        gpu_name = pynvml.nvmlDeviceGetName(handle)
+                        if isinstance(gpu_name, bytes):
+                            gpu_name = gpu_name.decode('utf-8')
+                        
+                        total_memory = info.total
+                        used_memory = info.used
+                        free_memory = info.free
+                        
+                        print(f"  GPU {i} ({gpu_name}): "
+                              f"总显存 {total_memory/1024**3:.2f}GB, "
+                              f"已用 {used_memory/1024**3:.2f}GB, "
+                              f"空闲 {free_memory/1024**3:.2f}GB")
+                    else:
+                        # 回退到 PyTorch API（仅能看到当前进程）
+                        total_memory = torch.cuda.get_device_properties(i).total_memory
+                        torch.cuda.set_device(i)
+                        allocated = torch.cuda.memory_allocated(i)
+                        reserved = torch.cuda.memory_reserved(i)
+                        free_memory = total_memory - allocated - reserved
+                        
+                        gpu_name = torch.cuda.get_device_name(i)
+                        print(f"  GPU {i} ({gpu_name}): "
+                              f"总显存 {total_memory/1024**3:.2f}GB, "
+                              f"当前进程已用 {(allocated + reserved)/1024**3:.2f}GB, "
+                              f"估计空闲 {free_memory/1024**3:.2f}GB")
+                    
+                    if free_memory > max_free_memory:
+                        max_free_memory = free_memory
+                        best_device = i
+                        
+                except Exception as e:
+                    print(f"  GPU {i} 检测失败: {e}")
+                    continue
+            
+            if use_nvml:
+                pynvml.nvmlShutdown()
+            
+            # 检查最佳设备是否有足够的显存（至少需要2GB）
+            min_required_memory = 2 * 1024**3  # 2GB
+            if max_free_memory < min_required_memory:
+                print(f"警告: 所有GPU显存不足（最大空闲 {max_free_memory/1024**3:.2f}GB < 2GB）")
+                print("请尝试以下解决方案：")
+                print("  1. 释放其他进程占用的GPU显存")
+                print("  2. 使用环境变量指定特定GPU: export SENSEVOICE_DEVICE=cuda:N")
+                print("  3. 使用CPU模式: export SENSEVOICE_DEVICE=cpu")
+                # 仍然尝试使用显存最多的GPU
+            
+            selected_device = f"cuda:{best_device}"
+            print(f"自动选择显存空闲最多的GPU: {selected_device} (空闲 {max_free_memory/1024**3:.2f}GB)")
+            
+            return selected_device
+            
+        except Exception as e:
+            print(f"GPU选择失败，使用 cuda:0: {e}")
+            return "cuda:0"
     
     def _validate_specific_cuda_device(self, device: str) -> str:
         """验证指定的CUDA设备是否可用"""
@@ -122,26 +209,8 @@ class Settings:
                 print("CUDA不可用，降级到CPU")
                 return "cpu"
 
-            gpu_count = torch.cuda.device_count()
-            print(f"使用CUDA设备，检测到 {gpu_count} 个GPU")
-
-            # 查找显存使用最少的GPU
-            best_device = 0
-            min_memory_used = float('inf')
-
-            for i in range(gpu_count):
-                torch.cuda.set_device(i)
-                memory_allocated = torch.cuda.memory_allocated(i)
-                memory_reserved = torch.cuda.memory_reserved(i)
-                total_used = memory_allocated + memory_reserved
-
-                if total_used < min_memory_used:
-                    min_memory_used = total_used
-                    best_device = i
-
-            selected_device = f"cuda:{best_device}"
-            print(f"自动选择显存使用最少的GPU: {selected_device}")
-            return selected_device
+            # 使用统一的GPU选择逻辑
+            return self._select_best_gpu()
 
         except Exception as e:
             print(f"CUDA验证失败，使用CPU: {e}")
