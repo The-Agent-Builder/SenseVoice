@@ -59,7 +59,8 @@ RUN pip install --no-cache-dir \
     modelscope \
     huggingface_hub \
     "funasr>=1.1.3" \
-    gradio
+    gradio \
+    pynvml
 
 # 创建缓存目录
 RUN mkdir -p /root/.cache/modelscope
