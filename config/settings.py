@@ -30,6 +30,10 @@ class Settings:
         self.enable_emotion_tags = os.getenv("SENSEVOICE_ENABLE_EMOTION_TAGS", "true").lower() == "true"
         self.enable_language_tags = os.getenv("SENSEVOICE_ENABLE_LANGUAGE_TAGS", "true").lower() == "true"
         self.use_itn = os.getenv("SENSEVOICE_USE_ITN", "false").lower() == "true"  # 默认关闭ITN以保留标记
+        
+        # WebSocket流式功能配置
+        # 延迟加载：默认不立即加载流式模型，仅在首次WebSocket连接时加载（节省显存约12GB）
+        self.enable_streaming_on_startup = os.getenv("SENSEVOICE_ENABLE_STREAMING_ON_STARTUP", "false").lower() == "true"
 
         # 服务配置
         self.host = os.getenv("SENSEVOICE_HOST", "0.0.0.0")

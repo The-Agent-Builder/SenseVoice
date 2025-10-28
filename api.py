@@ -33,7 +33,8 @@ class Language(str, Enum):
 
 # 初始化配置和模型
 settings = get_settings()
-model_manager.initialize()
+# 根据配置决定是否在启动时加载流式模型（默认延迟加载以节省显存）
+model_manager.initialize(load_streaming=settings.enable_streaming_on_startup)
 
 # 获取模型
 m, kwargs = model_manager.get_sense_voice_model()

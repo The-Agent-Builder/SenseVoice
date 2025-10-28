@@ -22,8 +22,12 @@ class SenseVoiceModelManager:
         self.streaming_model: Optional[AutoModel] = None
         self._initialized = False
     
-    def initialize(self) -> bool:
-        """初始化模型"""
+    def initialize(self, load_streaming: bool = False) -> bool:
+        """初始化模型
+        
+        Args:
+            load_streaming: 是否立即加载流式模型（默认False，延迟加载以节省显存）
+        """
         try:
             # 设置显存管理
             self._setup_memory_management()
@@ -37,21 +41,11 @@ class SenseVoiceModelManager:
             self.sense_voice_model.eval()
             logger.info("SenseVoice模型加载成功")
             
-            # 初始化AutoModel（用于流式处理）
-            try:
-                logger.info("正在加载流式模型...")
-                self.streaming_model = AutoModel(
-                    model=self.settings.model_dir,
-                    trust_remote_code=True,
-                    vad_model="fsmn-vad",
-                    vad_kwargs={"max_single_segment_time": 30000},
-                    device=self.settings.device,
-                    disable_update=True  # 禁用自动更新检查
-                )
-                logger.info("流式模型加载成功")
-            except Exception as e:
-                logger.warning(f"流式模型加载失败，将仅使用基础模型: {e}")
-                self.streaming_model = None
+            # 流式模型延迟加载（节省显存）
+            if load_streaming:
+                self._load_streaming_model()
+            else:
+                logger.info("流式模型将在首次WebSocket连接时延迟加载（节省显存）")
             
             self._initialized = True
             return True
@@ -59,6 +53,27 @@ class SenseVoiceModelManager:
         except Exception as e:
             logger.error(f"模型初始化失败: {e}")
             return False
+    
+    def _load_streaming_model(self):
+        """加载流式模型"""
+        if self.streaming_model is not None:
+            logger.info("流式模型已加载，跳过")
+            return
+            
+        try:
+            logger.info("正在加载流式模型（WebSocket专用）...")
+            self.streaming_model = AutoModel(
+                model=self.settings.model_dir,
+                trust_remote_code=True,
+                vad_model="fsmn-vad",
+                vad_kwargs={"max_single_segment_time": 30000},
+                device=self.settings.device,
+                disable_update=True  # 禁用自动更新检查
+            )
+            logger.info("流式模型加载成功")
+        except Exception as e:
+            logger.warning(f"流式模型加载失败，WebSocket功能将不可用: {e}")
+            self.streaming_model = None
 
     def _setup_memory_management(self):
         """设置显存管理"""
@@ -103,10 +118,20 @@ class SenseVoiceModelManager:
             raise RuntimeError("模型未初始化，请先调用initialize()")
         return self.sense_voice_model, self.sense_voice_kwargs
     
-    def get_streaming_model(self) -> Optional[AutoModel]:
-        """获取流式模型"""
+    def get_streaming_model(self, auto_load: bool = True) -> Optional[AutoModel]:
+        """获取流式模型
+        
+        Args:
+            auto_load: 如果模型未加载，是否自动加载（默认True）
+        """
         if not self._initialized:
             raise RuntimeError("模型未初始化，请先调用initialize()")
+        
+        # 延迟加载：首次获取时自动加载
+        if self.streaming_model is None and auto_load:
+            logger.info("首次使用WebSocket，正在加载流式模型...")
+            self._load_streaming_model()
+        
         return self.streaming_model
     
     def has_streaming_model(self) -> bool:

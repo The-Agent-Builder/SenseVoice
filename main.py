@@ -64,6 +64,10 @@ def main():
     logger.info(f"  SENSEVOICE_HOST: {settings.host}")
     logger.info(f"  SENSEVOICE_PORT: {settings.port}")
     logger.info(f"  SENSEVOICE_LOG_LEVEL: {settings.log_level}")
+    logger.info(f"  SENSEVOICE_ENABLE_STREAMING_ON_STARTUP: {settings.enable_streaming_on_startup}")
+    if not settings.enable_streaming_on_startup:
+        logger.info("  ℹ️  流式模型延迟加载已启用（节省~12GB显存）")
+        logger.info("  ℹ️  WebSocket功能在首次连接时自动加载")
     logger.info("="*50)
     
     # 启动服务
