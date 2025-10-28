@@ -92,16 +92,13 @@ class SenseVoiceModelManager:
                 # 清理显存缓存
                 torch.cuda.empty_cache()
 
-                # 设置显存分配策略 - 根据GPU显存大小动态调整
-                total_memory = torch.cuda.get_device_properties(self.settings.device).total_memory
-                # 如果显存 > 16GB，可以使用更多；否则限制在90%
-                memory_fraction = 0.95 if total_memory > 16 * 1024**3 else 0.9
-                torch.cuda.memory.set_per_process_memory_fraction(memory_fraction)
-                logger.info(f"设置显存使用上限为 {memory_fraction*100}%")
-
                 # 启用显存回收
                 import gc
                 gc.collect()
+                
+                # 注意：不设置 memory_fraction，让PyTorch按需分配显存
+                # 如果设置了固定的fraction，会导致PyTorch预留大量显存但不释放
+                logger.info("显存管理：使用按需分配策略（不预留固定比例）")
 
                 logger.info("显存管理设置完成（已启用expandable_segments避免碎片化）")
 
