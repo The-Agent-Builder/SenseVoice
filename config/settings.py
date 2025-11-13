@@ -30,7 +30,11 @@ class Settings:
         self.enable_emotion_tags = os.getenv("SENSEVOICE_ENABLE_EMOTION_TAGS", "true").lower() == "true"
         self.enable_language_tags = os.getenv("SENSEVOICE_ENABLE_LANGUAGE_TAGS", "true").lower() == "true"
         self.use_itn = os.getenv("SENSEVOICE_USE_ITN", "false").lower() == "true"  # 默认关闭ITN以保留标记
-        
+
+        # 长音频分块处理配置
+        self.default_chunk_size = int(os.getenv("SENSEVOICE_DEFAULT_CHUNK_SIZE", "120"))  # 默认120秒分块
+        self.chunk_overlap = float(os.getenv("SENSEVOICE_CHUNK_OVERLAP", "1.0"))  # 默认1秒重叠
+
         # WebSocket流式功能配置
         # 延迟加载：默认不立即加载流式模型，仅在首次WebSocket连接时加载（节省显存约12GB）
         self.enable_streaming_on_startup = os.getenv("SENSEVOICE_ENABLE_STREAMING_ON_STARTUP", "false").lower() == "true"
