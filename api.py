@@ -148,8 +148,13 @@ async def turn_audio_to_text(
     files: Annotated[List[UploadFile], File(description="WebM audio files (recommended) or other audio formats in 16KHz")],
     keys: Annotated[str, Form(description="name of each audio joined with comma")] = None,
     lang: Annotated[Language, Form(description="language of audio content")] = "auto",
+    chunk_size: Annotated[int, Form(description="chunk size in seconds for long audio processing, 0 to disable chunking")] = 60,
 ):
+    import torch
+
     audios = []
+    audio_durations = []
+
     for file in files:
         file_io = BytesIO(await file.read())
         data_or_path_or_list, audio_fs = torchaudio.load(file_io)
@@ -162,6 +167,10 @@ async def turn_audio_to_text(
         data_or_path_or_list = data_or_path_or_list.mean(0)
         audios.append(data_or_path_or_list)
 
+        # 计算音频时长（秒）
+        duration = len(data_or_path_or_list) / TARGET_FS
+        audio_durations.append(duration)
+
     if lang == "":
         lang = "auto"
 
@@ -170,25 +179,155 @@ async def turn_audio_to_text(
     else:
         key = keys.split(",")
 
-    # 使用 torch.no_grad() 禁用梯度计算，大幅减少显存占用（约减少70%）
+    # 处理每个音频文件
+    all_results = []
+
+    for audio, duration, audio_key in zip(audios, audio_durations, key):
+        # 判断是否需要分块处理（音频时长超过chunk_size且chunk_size > 0）
+        if chunk_size > 0 and duration > chunk_size:
+            # 分块处理长音频
+            result = await _process_long_audio_chunked(
+                audio=audio,
+                audio_key=audio_key,
+                lang=lang,
+                chunk_size=chunk_size,
+                model=m,
+                kwargs=kwargs
+            )
+        else:
+            # 短音频直接处理
+            result = await _process_short_audio(
+                audio=audio,
+                audio_key=audio_key,
+                lang=lang,
+                model=m,
+                kwargs=kwargs
+            )
+
+        all_results.extend(result)
+
+    return {"result": all_results}
+
+
+async def _process_short_audio(audio, audio_key: str, lang: str, model, kwargs: dict):
+    """处理短音频（不分块）"""
     import torch
+
     with torch.no_grad():
-        res = m.inference(
-            data_in=audios,
-            language=lang,  # "zh", "en", "yue", "ja", "ko", "nospeech"
-            use_itn=False,  # 关闭逆文本标准化，保留原始标记
-            ban_emo_unk=False,  # 允许情感标记输出
-            key=key,
+        res = model.inference(
+            data_in=[audio],
+            language=lang,
+            use_itn=False,
+            ban_emo_unk=False,
+            key=[audio_key],
             fs=TARGET_FS,
             **kwargs,
         )
+
+        # 清理显存
+        if settings.device.startswith("cuda"):
+            torch.cuda.empty_cache()
+
     if len(res) == 0:
-        return {"result": []}
+        return []
+
     for it in res[0]:
         it["raw_text"] = it["text"]
         it["clean_text"] = re.sub(regex, "", it["text"], 0, re.MULTILINE)
         it["text"] = rich_transcription_postprocess(it["text"])
-    return {"result": res[0]}
+
+    return res[0]
+
+
+async def _process_long_audio_chunked(audio, audio_key: str, lang: str, chunk_size: int, model, kwargs: dict):
+    """分块处理长音频，并合并结果"""
+    import torch
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    total_samples = len(audio)
+    total_duration = total_samples / TARGET_FS
+    chunk_samples = chunk_size * TARGET_FS
+    overlap_samples = int(settings.chunk_overlap * TARGET_FS)  # 使用配置的重叠时间
+
+    chunk_raw_texts = []  # 存储每个块的原始文本
+    chunk_clean_texts = []  # 存储每个块清理后的文本
+    chunk_index = 0
+
+    logger.info(f"长音频分块处理: 总时长={total_duration:.2f}s, 分块大小={chunk_size}s, 重叠={settings.chunk_overlap}s")
+
+    start_pos = 0
+    while start_pos < total_samples:
+        end_pos = min(start_pos + chunk_samples, total_samples)
+
+        # 提取音频块
+        audio_chunk = audio[start_pos:end_pos]
+        chunk_duration = len(audio_chunk) / TARGET_FS
+
+        logger.info(f"处理音频块 {chunk_index + 1}: 起始={start_pos/TARGET_FS:.2f}s, "
+                   f"结束={end_pos/TARGET_FS:.2f}s, 时长={chunk_duration:.2f}s")
+
+        # 使用 torch.no_grad() 禁用梯度计算
+        with torch.no_grad():
+            try:
+                chunk_key = f"{audio_key}_chunk_{chunk_index}"
+                res = model.inference(
+                    data_in=[audio_chunk],
+                    language=lang,
+                    use_itn=False,
+                    ban_emo_unk=False,
+                    key=[chunk_key],
+                    fs=TARGET_FS,
+                    **kwargs,
+                )
+
+                # 立即清理显存
+                if settings.device.startswith("cuda"):
+                    torch.cuda.empty_cache()
+
+                if len(res) > 0 and len(res[0]) > 0:
+                    # 提取原始文本内容（未经过后处理的）
+                    chunk_text = res[0][0].get("text", "")
+                    chunk_raw_texts.append(chunk_text)
+
+                    # 对每个块单独清理标记
+                    chunk_clean = re.sub(regex, "", chunk_text, 0, re.MULTILINE)
+                    chunk_clean_texts.append(chunk_clean)
+
+                    # logger.info(f"音频块 {chunk_index + 1} 处理完成，识别文本: {chunk_clean[:50]}...")
+
+            except Exception as e:
+                logger.error(f"音频块 {chunk_index + 1} 处理失败: {e}")
+                # 继续处理下一块
+
+        # 移动到下一块（考虑重叠）
+        if end_pos >= total_samples:
+            break
+
+        start_pos = end_pos - overlap_samples
+        chunk_index += 1
+
+    logger.info(f"长音频分块处理完成，共处理 {chunk_index + 1} 个音频块，正在合并结果...")
+    # logger.info(f"收集到的原始文本块数量: {len(chunk_raw_texts)}")
+
+    # 合并原始文本（包含标记）
+    merged_raw_text = "".join(chunk_raw_texts)
+    logger.info(f"合并后的原始文本长度: {len(merged_raw_text)} 字符")
+
+    # 合并清理后的文本（已去除标记）
+    merged_clean_text = "".join(chunk_clean_texts)
+    logger.info(f"合并后的清理文本长度: {len(merged_clean_text)} 字符")
+
+    # 构造与短音频相同格式的返回结果
+    result = {
+        "key": audio_key,
+        "text": rich_transcription_postprocess(merged_raw_text),
+        "raw_text": merged_raw_text,
+        "clean_text": merged_clean_text
+    }
+
+    return [result]
 
 
 if __name__ == "__main__":
